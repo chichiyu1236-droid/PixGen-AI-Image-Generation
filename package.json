@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
@@ -23,6 +23,7 @@
     "zod": "^3.25.30"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
     "@playwright/test": "^1.52.0",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.15.29",
