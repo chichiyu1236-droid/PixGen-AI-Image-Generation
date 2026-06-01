@@ -24,7 +24,7 @@ The MVP must be real enough to deploy and test with users: Google login, generat
 - Upgrade placeholder page or modal
 - Supabase Storage persistence for generated images
 - Server-side prompt assembly
-- OpenAI Image API generation with `gpt-image-1.5`, `quality: high`, and one image per request
+- OpenAI Image API generation with `gpt-image2`, `quality: high`, and one image per request
 
 ### Excluded
 
@@ -256,11 +256,11 @@ Use the OpenAI Image API from the server.
 
 Default parameters:
 
-- Model: `gpt-image-1.5`
+- Model: `gpt-image2`
 - Quality: `high`
 - Number of images: `1`
 
-The model name should be configured through an environment variable, with `OPENAI_IMAGE_MODEL=gpt-image-1.5` as the default deployment value.
+The model name should be configured through an environment variable, with `OPENAI_IMAGE_MODEL=gpt-image2` as the default deployment value.
 
 Aspect ratio choices in the UI must map to currently supported Image API sizes. If an exact ratio is unavailable, the app should either hide that option or map it to the closest supported size and label it honestly in the UI.
 
@@ -297,7 +297,7 @@ Deploy the Next.js app on Vercel and use Supabase for Auth, Postgres, and Storag
 Required environment variables:
 
 - `OPENAI_API_KEY`
-- `OPENAI_IMAGE_MODEL=gpt-image-1.5`
+- `OPENAI_IMAGE_MODEL=gpt-image2`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`

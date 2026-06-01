@@ -41,6 +41,8 @@ Deploy to Vercel and set:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SITE_URL`
 
+The default image model is `gpt-image2`. If your OpenAI account or region does not support it, set `OPENAI_IMAGE_MODEL` to another image model available to your account.
+
 Add the production auth callback URL in Supabase:
 
 ```text
