@@ -25,7 +25,13 @@ export async function POST(request: Request) {
   }
 
   const admin = createSupabaseAdminClient();
-  const credits = await getProfileCredits(admin, user.id);
+  let credits: number;
+
+  try {
+    credits = await getProfileCredits(admin, user.id);
+  } catch {
+    return NextResponse.json({ error: "profile_unavailable" }, { status: 500 });
+  }
 
   if (credits < 1) {
     return NextResponse.json({ error: "insufficient_credits" }, { status: 402 });
