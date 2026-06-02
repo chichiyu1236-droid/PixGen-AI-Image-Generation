@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/generate/route";
+import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getProfileCredits } from "@/lib/auth/profile";
 
@@ -15,6 +16,10 @@ vi.mock("@/lib/auth/profile", () => ({
   getProfileCredits: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/ensure-profile", () => ({
+  ensureUserProfile: vi.fn(),
+}));
+
 vi.mock("@/lib/openai/images", () => ({
   generateImageBase64: vi.fn(),
 }));
@@ -26,6 +31,7 @@ describe("POST /api/generate", () => {
         getUser: vi.fn(async () => ({ data: { user: null }, error: null })),
       },
     } as never);
+    vi.mocked(ensureUserProfile).mockResolvedValue(false);
   });
 
   it("rejects unauthenticated users", async () => {

@@ -4,6 +4,7 @@ import { buildImagePrompt } from "@/lib/prompts/builder";
 import { generateRequestSchema } from "@/lib/validation/generate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
 import { generateImageBase64 } from "@/lib/openai/images";
 import { uploadGeneratedImage } from "@/lib/storage/images";
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   let credits: number;
 
   try {
+    await ensureUserProfile(user);
     credits = await getProfileCredits(admin, user.id);
   } catch {
     return NextResponse.json({ error: "profile_unavailable" }, { status: 500 });

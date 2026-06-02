@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/auth-button";
 import { CreditBadge } from "@/components/credit-badge";
 import { GenerationForm } from "@/components/generation-form";
+import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -16,6 +17,7 @@ export default async function GeneratePage() {
     redirect("/login");
   }
 
+  await ensureUserProfile(user).catch(() => undefined);
   const credits = await getProfileCredits(supabase, user.id).catch(() => 0);
 
   return (
