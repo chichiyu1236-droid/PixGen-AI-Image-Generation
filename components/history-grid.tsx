@@ -4,6 +4,7 @@ import { Copy, Download, RotateCw } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { GenerationFeedback } from "@/components/generation-feedback";
 import type { GenerateRequest } from "@/lib/validation/generate";
 import type { Database, Json } from "@/types/database";
 
@@ -116,9 +117,11 @@ export function HistoryGrid({ generations }: { generations: Generation[] }) {
               </button>
               <Link className="inline-flex items-center justify-center gap-1 rounded-md bg-ink px-2 py-2 font-semibold text-white" href={buildRegenerateHref(item)}>
                 <RotateCw size={15} />
-                同款
+                重生成
               </Link>
             </div>
+
+            <GenerationFeedback generationId={item.id} initialFeedback={item.feedback} />
           </article>
         ))}
       </div>

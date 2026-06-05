@@ -11,6 +11,18 @@ export const imageTypes = {
     label: "宣传海报",
     prompt: "commercial poster-style promotional image",
   },
+  xiaohongshu_cover: {
+    label: "小红书封面",
+    prompt: "eye-catching Xiaohongshu-style social cover image",
+  },
+  avatar: {
+    label: "头像",
+    prompt: "polished profile avatar image",
+  },
+  banner: {
+    label: "Banner",
+    prompt: "wide digital banner image for campaign placement",
+  },
 } as const;
 
 export const aspectRatios = {
@@ -37,12 +49,24 @@ export const styles = {
     prompt: "premium minimal commercial photography",
   },
   soft_realistic: {
-    label: "柔和写实",
+    label: "真实摄影",
     prompt: "soft realistic editorial photography",
   },
   vibrant_ad: {
     label: "鲜明广告",
     prompt: "vibrant high-impact advertising visual",
+  },
+  soft_3d: {
+    label: "柔和 3D",
+    prompt: "soft premium 3D rendered commercial visual",
+  },
+  editorial_illustration: {
+    label: "精致插画",
+    prompt: "refined editorial illustration with commercial polish",
+  },
+  luxury_commercial: {
+    label: "奢华商业",
+    prompt: "luxury commercial visual with premium materials and lighting",
   },
 } as const;
 

@@ -46,6 +46,7 @@ export type Database = {
           aspect_ratio: string;
           status: "succeeded" | "failed";
           error_message: string | null;
+          feedback: "liked" | "disliked" | null;
           created_at: string;
         };
         Insert: {
@@ -60,6 +61,7 @@ export type Database = {
           aspect_ratio: string;
           status: "succeeded" | "failed";
           error_message?: string | null;
+          feedback?: "liked" | "disliked" | null;
           created_at?: string;
         };
         Update: {
@@ -74,6 +76,7 @@ export type Database = {
           aspect_ratio?: string;
           status?: "succeeded" | "failed";
           error_message?: string | null;
+          feedback?: "liked" | "disliked" | null;
           created_at?: string;
         };
         Relationships: [

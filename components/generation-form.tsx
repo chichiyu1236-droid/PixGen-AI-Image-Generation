@@ -5,13 +5,16 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { GenerationFeedback } from "@/components/generation-feedback";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 import type { GenerateRequest } from "@/lib/validation/generate";
 
 type GenerationResult = {
   generation: {
+    id: string;
     image_url: string | null;
+    feedback: "liked" | "disliked" | null;
   };
 };
 
@@ -20,6 +23,8 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [generationId, setGenerationId] = useState<string | null>(null);
+  const [generationFeedback, setGenerationFeedback] = useState<"liked" | "disliked" | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -47,10 +52,27 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
       return;
     }
 
+    setError(null);
+    let healthResponse: Response;
+
+    try {
+      healthResponse = await fetch("/api/health/image-provider");
+    } catch {
+      setError("network_error");
+      return;
+    }
+
+    if (!healthResponse.ok) {
+      setError("provider_unavailable");
+      return;
+    }
+
     setLoading(true);
     setElapsedSeconds(0);
     setError(null);
     setImageUrl(null);
+    setGenerationId(null);
+    setGenerationFeedback(null);
 
     try {
       const formData = new FormData(event.currentTarget);
@@ -68,6 +90,8 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
       }
 
       setImageUrl((body as GenerationResult).generation.image_url);
+      setGenerationId((body as GenerationResult).generation.id);
+      setGenerationFeedback((body as GenerationResult).generation.feedback);
       router.refresh();
     } catch {
       setError("network_error");
@@ -80,9 +104,9 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
     <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
       <form onSubmit={onSubmit} className="rounded-lg border border-ink/10 bg-white p-5 shadow-sm" aria-busy={loading}>
         <div className="grid gap-4">
-          <SelectField name="imageType" label="图片类型" options={imageTypes} defaultValue={initialValues.imageType} />
+          <SelectField name="imageType" label="图片用途" options={imageTypes} defaultValue={initialValues.imageType} />
           <SelectField name="aspectRatio" label="比例" options={aspectRatios} defaultValue={initialValues.aspectRatio} />
-          <SelectField name="style" label="风格" options={styles} defaultValue={initialValues.style} />
+          <SelectField name="style" label="画面质感" options={styles} defaultValue={initialValues.style} />
           <SelectField name="scene" label="场景" options={scenes} defaultValue={initialValues.scene} />
           <SelectField name="whitespace" label="留白" options={whitespaceOptions} defaultValue={initialValues.whitespace} />
           <label className="grid gap-2 text-sm font-semibold">
@@ -118,7 +142,7 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
       <section className="min-h-[520px] rounded-lg border border-ink/10 bg-white p-5 shadow-sm">
         {credits < 1 || error === "insufficient_credits" ? <UpgradePrompt /> : null}
         {error && error !== "insufficient_credits" ? (
-          <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">生成失败，请稍后重试。</p>
+          <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{getErrorMessage(error)}</p>
         ) : null}
         {loading ? (
           <div className="grid h-full min-h-[420px] place-items-center text-center">
@@ -150,6 +174,7 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
               <Download size={16} />
               下载图片
             </a>
+            {generationId ? <GenerationFeedback generationId={generationId} initialFeedback={generationFeedback} /> : null}
           </div>
         ) : (
           <div className="grid h-full min-h-[420px] place-items-center text-center text-ink/50">生成结果会显示在这里</div>
@@ -157,6 +182,18 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
       </section>
     </div>
   );
+}
+
+function getErrorMessage(error: string) {
+  const messages: Record<string, string> = {
+    provider_unavailable: "生成服务繁忙，请稍后再试。",
+    image_generation_failed: "图片生成失败，请稍后重试。",
+    storage_unavailable: "图片保存服务暂时不可用，请稍后重试。",
+    network_error: "网络异常，请检查连接后重试。",
+    generation_failed: "生成失败，请稍后重试。",
+  };
+
+  return messages[error] ?? "生成失败，请稍后重试。";
 }
 
 function SelectField<T extends Record<string, { label: string }>>({

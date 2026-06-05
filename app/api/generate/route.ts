@@ -7,6 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
 import { generateImageBase64 } from "@/lib/openai/images";
+import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderUnavailable } from "@/lib/openai/provider-health";
 import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 
 export async function POST(request: Request) {
@@ -39,6 +40,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "insufficient_credits" }, { status: 402 });
   }
 
+  const providerHealth = getImageProviderHealth();
+
+  if (!providerHealth.ok) {
+    return NextResponse.json({ error: "provider_unavailable", retryAfterSeconds: providerHealth.retryAfterSeconds }, { status: 503 });
+  }
+
   try {
     await ensureGeneratedImagesBucket(admin);
   } catch (error) {
@@ -47,10 +54,26 @@ export async function POST(request: Request) {
   }
 
   const finalPrompt = buildImagePrompt(parsed.data);
-  const base64Image = await generateImageBase64({
-    prompt: finalPrompt,
-    size: aspectRatios[parsed.data.aspectRatio].size,
-  });
+  let base64Image: string;
+
+  try {
+    base64Image = await generateImageBase64({
+      prompt: finalPrompt,
+      size: aspectRatios[parsed.data.aspectRatio].size,
+    });
+  } catch (error) {
+    const providerErrorReason = getImageProviderErrorReason(error);
+
+    if (providerErrorReason) {
+      markImageProviderUnavailable(providerErrorReason);
+      console.error(error);
+      return NextResponse.json({ error: "provider_unavailable" }, { status: 503 });
+    }
+
+    console.error(error);
+    return NextResponse.json({ error: "image_generation_failed" }, { status: 500 });
+  }
+
   const uploaded = await uploadGeneratedImage(admin, { userId: user.id, base64Image });
 
   const { data: generation, error } = await admin.rpc("record_successful_generation", {

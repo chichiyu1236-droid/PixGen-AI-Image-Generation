@@ -22,7 +22,7 @@ function isOptionKey<T extends Record<string, unknown>>(options: T, value: strin
   return Boolean(value && value in options);
 }
 
-function getInitialValues(searchParams: Record<string, string | string[] | undefined>): Partial<GenerateRequest> {
+function getInitialValues(searchParams: Record<string, string | string[] | undefined>, useExample: boolean): Partial<GenerateRequest> {
   const imageType = getSearchValue(searchParams, "imageType");
   const aspectRatio = getSearchValue(searchParams, "aspectRatio");
   const style = getSearchValue(searchParams, "style");
@@ -35,8 +35,8 @@ function getInitialValues(searchParams: Record<string, string | string[] | undef
     ...(isOptionKey(styles, style) ? { style } : {}),
     ...(isOptionKey(scenes, scene) ? { scene } : {}),
     ...(isOptionKey(whitespaceOptions, whitespace) ? { whitespace } : {}),
-    subject: getSearchValue(searchParams, "subject") ?? "",
-    extra: getSearchValue(searchParams, "extra") ?? "",
+    subject: getSearchValue(searchParams, "subject") ?? (useExample ? "一瓶高端护肤精华" : ""),
+    extra: getSearchValue(searchParams, "extra") ?? (useExample ? "透明玻璃瓶，银色瓶盖，干净高级广告背景" : ""),
   };
 }
 
@@ -53,6 +53,13 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
 
   await ensureUserProfile(user).catch(() => undefined);
   const credits = await getProfileCredits(supabase, user.id).catch(() => 0);
+  const hasPrefill = Boolean(getSearchValue(resolvedSearchParams, "subject"));
+  const { count } = await supabase
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("status", "succeeded");
+  const useExample = !hasPrefill && (count ?? 0) === 0;
 
   return (
     <main className="min-h-screen bg-paper px-6 py-6">
@@ -70,7 +77,7 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
         </nav>
       </header>
       <div className="mx-auto max-w-6xl">
-        <GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams)} />
+        <GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} />
       </div>
     </main>
   );
