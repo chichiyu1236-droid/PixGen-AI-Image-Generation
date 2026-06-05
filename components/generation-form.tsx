@@ -4,7 +4,7 @@ import { CheckCircle2, Clock3, Download, ImageIcon, Loader2, Server, Sparkles } 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 
@@ -34,7 +34,9 @@ export function GenerationForm({ credits }: { credits: number }) {
     return () => window.clearInterval(timer);
   }, [loading]);
 
-  async function onSubmit(formData: FormData) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
     if (loading) {
       return;
     }
@@ -45,10 +47,12 @@ export function GenerationForm({ credits }: { credits: number }) {
     }
 
     setLoading(true);
+    setElapsedSeconds(0);
     setError(null);
     setImageUrl(null);
 
     try {
+      const formData = new FormData(event.currentTarget);
       const payload = Object.fromEntries(formData.entries());
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -73,7 +77,7 @@ export function GenerationForm({ credits }: { credits: number }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-      <form action={onSubmit} className="rounded-lg border border-ink/10 bg-white p-5 shadow-sm">
+      <form onSubmit={onSubmit} className="rounded-lg border border-ink/10 bg-white p-5 shadow-sm" aria-busy={loading}>
         <div className="grid gap-4">
           <SelectField name="imageType" label="图片类型" options={imageTypes} />
           <SelectField name="aspectRatio" label="比例" options={aspectRatios} />
