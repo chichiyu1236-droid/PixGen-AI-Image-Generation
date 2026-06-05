@@ -46,6 +46,8 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const payload = Object.fromEntries(formData.entries());
 
     if (loading) {
       return;
@@ -79,8 +81,6 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
     setGenerationFeedback(null);
 
     try {
-      const formData = new FormData(event.currentTarget);
-      const payload = Object.fromEntries(formData.entries());
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
