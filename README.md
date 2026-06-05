@@ -41,6 +41,7 @@ Deploy to Vercel and set:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SITE_URL`
+- `ADMIN_EMAILS` (optional; comma-separated admin emails for `/admin/credits`)
 
 The default image model is `gpt-image2`. If your OpenAI account or region does not support it, set `OPENAI_IMAGE_MODEL` to another image model available to your account.
 

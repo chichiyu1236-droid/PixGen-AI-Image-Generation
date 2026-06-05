@@ -5,9 +5,43 @@ import { CreditBadge } from "@/components/credit-badge";
 import { GenerationForm } from "@/components/generation-form";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
+import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { GenerateRequest } from "@/lib/validation/generate";
 
-export default async function GeneratePage() {
+type GeneratePageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getSearchValue(searchParams: Record<string, string | string[] | undefined>, key: string) {
+  const value = searchParams[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function isOptionKey<T extends Record<string, unknown>>(options: T, value: string | undefined): value is keyof T & string {
+  return Boolean(value && value in options);
+}
+
+function getInitialValues(searchParams: Record<string, string | string[] | undefined>): Partial<GenerateRequest> {
+  const imageType = getSearchValue(searchParams, "imageType");
+  const aspectRatio = getSearchValue(searchParams, "aspectRatio");
+  const style = getSearchValue(searchParams, "style");
+  const scene = getSearchValue(searchParams, "scene");
+  const whitespace = getSearchValue(searchParams, "whitespace");
+
+  return {
+    ...(isOptionKey(imageTypes, imageType) ? { imageType } : {}),
+    ...(isOptionKey(aspectRatios, aspectRatio) ? { aspectRatio } : {}),
+    ...(isOptionKey(styles, style) ? { style } : {}),
+    ...(isOptionKey(scenes, scene) ? { scene } : {}),
+    ...(isOptionKey(whitespaceOptions, whitespace) ? { whitespace } : {}),
+    subject: getSearchValue(searchParams, "subject") ?? "",
+    extra: getSearchValue(searchParams, "extra") ?? "",
+  };
+}
+
+export default async function GeneratePage({ searchParams }: GeneratePageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -36,7 +70,7 @@ export default async function GeneratePage() {
         </nav>
       </header>
       <div className="mx-auto max-w-6xl">
-        <GenerationForm credits={credits} />
+        <GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams)} />
       </div>
     </main>
   );

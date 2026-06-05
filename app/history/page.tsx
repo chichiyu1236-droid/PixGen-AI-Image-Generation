@@ -29,7 +29,7 @@ export default async function HistoryPage() {
       <header className="mx-auto mb-6 flex max-w-6xl items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">生成历史</h1>
-          <p className="mt-1 text-sm text-ink/60">查看已保存的图片和最终提示词。</p>
+          <p className="mt-1 text-sm text-ink/60">查看已保存的图片、提示词和积分消耗。</p>
         </div>
         <Link className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white" href="/generate">
           返回生成

@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
+import type { GenerateRequest } from "@/lib/validation/generate";
 
 type GenerationResult = {
   generation: {
@@ -14,7 +15,7 @@ type GenerationResult = {
   };
 };
 
-export function GenerationForm({ credits }: { credits: number }) {
+export function GenerationForm({ credits, initialValues = {} }: { credits: number; initialValues?: Partial<GenerateRequest> }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,11 +80,11 @@ export function GenerationForm({ credits }: { credits: number }) {
     <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
       <form onSubmit={onSubmit} className="rounded-lg border border-ink/10 bg-white p-5 shadow-sm" aria-busy={loading}>
         <div className="grid gap-4">
-          <SelectField name="imageType" label="图片类型" options={imageTypes} />
-          <SelectField name="aspectRatio" label="比例" options={aspectRatios} />
-          <SelectField name="style" label="风格" options={styles} />
-          <SelectField name="scene" label="场景" options={scenes} />
-          <SelectField name="whitespace" label="留白" options={whitespaceOptions} />
+          <SelectField name="imageType" label="图片类型" options={imageTypes} defaultValue={initialValues.imageType} />
+          <SelectField name="aspectRatio" label="比例" options={aspectRatios} defaultValue={initialValues.aspectRatio} />
+          <SelectField name="style" label="风格" options={styles} defaultValue={initialValues.style} />
+          <SelectField name="scene" label="场景" options={scenes} defaultValue={initialValues.scene} />
+          <SelectField name="whitespace" label="留白" options={whitespaceOptions} defaultValue={initialValues.whitespace} />
           <label className="grid gap-2 text-sm font-semibold">
             主体描述
             <textarea
@@ -92,6 +93,7 @@ export function GenerationForm({ credits }: { credits: number }) {
               minLength={2}
               className="min-h-24 rounded-md border border-ink/15 p-3 font-normal outline-none transition focus:border-steel"
               placeholder="例如：一瓶高端护肤精华，透明玻璃瓶，银色瓶盖"
+              defaultValue={initialValues.subject}
             />
           </label>
           <label className="grid gap-2 text-sm font-semibold">
@@ -100,6 +102,7 @@ export function GenerationForm({ credits }: { credits: number }) {
               name="extra"
               className="min-h-20 rounded-md border border-ink/15 p-3 font-normal outline-none transition focus:border-steel"
               placeholder="例如：背景干净，适合广告图"
+              defaultValue={initialValues.extra}
             />
           </label>
         </div>
@@ -160,15 +163,17 @@ function SelectField<T extends Record<string, { label: string }>>({
   name,
   label,
   options,
+  defaultValue,
 }: {
   name: string;
   label: string;
   options: T;
+  defaultValue?: string;
 }) {
   return (
     <label className="grid gap-2 text-sm font-semibold">
       {label}
-      <select name={name} className="rounded-md border border-ink/15 bg-white p-3 font-normal outline-none transition focus:border-steel">
+      <select name={name} defaultValue={defaultValue} className="rounded-md border border-ink/15 bg-white p-3 font-normal outline-none transition focus:border-steel">
         {Object.entries(options).map(([value, option]) => (
           <option key={value} value={value}>
             {option.label}
