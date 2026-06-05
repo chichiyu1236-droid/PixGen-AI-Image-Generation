@@ -1,10 +1,10 @@
 "use client";
 
-import { CheckCircle2, Clock3, Download, ImageIcon, Loader2, Server, Sparkles } from "lucide-react";
+import { Clock3, Download, Loader2, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 
@@ -118,33 +118,21 @@ export function GenerationForm({ credits }: { credits: number }) {
           <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">生成失败，请稍后重试。</p>
         ) : null}
         {loading ? (
-          <div className="grid h-full min-h-[420px] place-items-center">
-            <div className="w-full max-w-md text-left">
-              <div className="rounded-lg border border-ink/10 bg-paper/60 p-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-clay">图片生成任务运行中</p>
-                    <h3 className="mt-1 text-2xl font-bold text-ink">正在生成高质量图片</h3>
-                  </div>
-                  <div className="grid h-12 w-12 place-items-center rounded-full bg-ink text-white">
-                    <Loader2 className="animate-spin" size={22} />
-                  </div>
-                </div>
+          <div className="grid h-full min-h-[420px] place-items-center text-center">
+            <div className="w-full max-w-sm">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-ink text-white">
+                <Loader2 className="animate-spin" size={24} />
+              </div>
+              <h3 className="mt-5 text-2xl font-bold text-ink">正在为你生成图片</h3>
+              <p className="mt-3 text-sm leading-6 text-ink/65">高质量图片需要一点时间，请保持页面打开，结果会自动显示在这里。</p>
 
-                <div className="mt-5 h-2 overflow-hidden rounded-full bg-ink/10">
-                  <div className="h-full w-2/3 animate-pulse rounded-full bg-clay" />
-                </div>
+              <div className="mt-6 h-2 overflow-hidden rounded-full bg-ink/10">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-clay" />
+              </div>
 
-                <div className="mt-5 grid gap-3 text-sm">
-                  <LoadingStep icon={<CheckCircle2 size={16} />} title="请求已提交" detail="已锁定本次生成请求，按钮会保持禁用。" done />
-                  <LoadingStep icon={<Server size={16} />} title="调用生图通道" detail="正在等待中转站返回图片，通常需要 30-90 秒。" active />
-                  <LoadingStep icon={<ImageIcon size={16} />} title="保存到历史记录" detail="图片返回后会自动上传并刷新积分。" />
-                </div>
-
-                <div className="mt-5 flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm text-ink/70">
-                  <Clock3 size={16} />
-                  已运行 {elapsedSeconds} 秒，请不要重复点击或关闭页面。
-                </div>
+              <div className="mt-5 inline-flex items-center gap-2 rounded-md bg-paper px-3 py-2 text-sm text-ink/70">
+                <Clock3 size={16} />
+                已等待 {elapsedSeconds} 秒
               </div>
             </div>
           </div>
@@ -164,37 +152,6 @@ export function GenerationForm({ credits }: { credits: number }) {
           <div className="grid h-full min-h-[420px] place-items-center text-center text-ink/50">生成结果会显示在这里</div>
         )}
       </section>
-    </div>
-  );
-}
-
-function LoadingStep({
-  icon,
-  title,
-  detail,
-  active = false,
-  done = false,
-}: {
-  icon: ReactNode;
-  title: string;
-  detail: string;
-  active?: boolean;
-  done?: boolean;
-}) {
-  return (
-    <div className="flex gap-3 rounded-md bg-white p-3">
-      <div
-        className={[
-          "mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full",
-          done ? "bg-green-100 text-green-700" : active ? "bg-ink text-white" : "bg-ink/10 text-ink/45",
-        ].join(" ")}
-      >
-        {active ? <Loader2 className="animate-spin" size={16} /> : icon}
-      </div>
-      <div>
-        <p className="font-semibold text-ink">{title}</p>
-        <p className="mt-0.5 leading-5 text-ink/60">{detail}</p>
-      </div>
     </div>
   );
 }
