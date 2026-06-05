@@ -7,7 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
 import { generateImageBase64 } from "@/lib/openai/images";
-import { uploadGeneratedImage } from "@/lib/storage/images";
+import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -37,6 +37,13 @@ export async function POST(request: Request) {
 
   if (credits < 1) {
     return NextResponse.json({ error: "insufficient_credits" }, { status: 402 });
+  }
+
+  try {
+    await ensureGeneratedImagesBucket(admin);
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "storage_unavailable" }, { status: 500 });
   }
 
   const finalPrompt = buildImagePrompt(parsed.data);

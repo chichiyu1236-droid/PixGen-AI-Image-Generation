@@ -35,6 +35,7 @@ npm run e2e
 Deploy to Vercel and set:
 
 - `OPENAI_API_KEY`
+- `OPENAI_BASE_URL` (optional; use this for an OpenAI-compatible relay endpoint)
 - `OPENAI_IMAGE_MODEL`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -42,6 +43,14 @@ Deploy to Vercel and set:
 - `NEXT_PUBLIC_SITE_URL`
 
 The default image model is `gpt-image2`. If your OpenAI account or region does not support it, set `OPENAI_IMAGE_MODEL` to another image model available to your account.
+
+For an OpenAI-compatible relay, set:
+
+```env
+OPENAI_API_KEY=your-relay-api-key
+OPENAI_BASE_URL=https://your-relay-domain/v1
+OPENAI_IMAGE_MODEL=gpt-image2
+```
 
 Add the production auth callback URL in Supabase:
 

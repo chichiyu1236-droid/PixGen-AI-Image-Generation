@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/generate/route";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getProfileCredits } from "@/lib/auth/profile";
+import { generateImageBase64 } from "@/lib/openai/images";
+import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(),
@@ -24,6 +27,11 @@ vi.mock("@/lib/openai/images", () => ({
   generateImageBase64: vi.fn(),
 }));
 
+vi.mock("@/lib/storage/images", () => ({
+  ensureGeneratedImagesBucket: vi.fn(),
+  uploadGeneratedImage: vi.fn(),
+}));
+
 describe("POST /api/generate", () => {
   beforeEach(() => {
     vi.mocked(createSupabaseServerClient).mockResolvedValue({
@@ -32,6 +40,14 @@ describe("POST /api/generate", () => {
       },
     } as never);
     vi.mocked(ensureUserProfile).mockResolvedValue(false);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue({} as never);
+    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(ensureGeneratedImagesBucket).mockResolvedValue(undefined);
+    vi.mocked(uploadGeneratedImage).mockResolvedValue({
+      imageUrl: "https://example.com/image.png",
+      storagePath: "user-1/image.png",
+    });
+    vi.mocked(generateImageBase64).mockResolvedValue("base64-image");
   });
 
   it("rejects unauthenticated users", async () => {
@@ -76,5 +92,39 @@ describe("POST /api/generate", () => {
 
     expect(response.status).toBe(500);
     expect(body.error).toBe("profile_unavailable");
+  });
+
+  it("checks storage availability before calling the image provider", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: { user: { id: "user-1" } },
+          error: null,
+        })),
+      },
+    } as never);
+    vi.mocked(ensureUserProfile).mockResolvedValue(true);
+    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(ensureGeneratedImagesBucket).mockRejectedValue(new Error("Bucket not found"));
+
+    const request = new Request("http://localhost/api/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        imageType: "ecommerce_hero",
+        aspectRatio: "square",
+        style: "premium_minimal",
+        scene: "studio",
+        whitespace: "balanced",
+        subject: "white running shoes",
+        extra: "",
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("storage_unavailable");
+    expect(generateImageBase64).not.toHaveBeenCalled();
   });
 });

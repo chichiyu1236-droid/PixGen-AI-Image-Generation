@@ -1,7 +1,29 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
-const BUCKET = "generated-images";
+export const GENERATED_IMAGES_BUCKET = "generated-images";
+
+export async function ensureGeneratedImagesBucket(supabase: SupabaseClient<Database>) {
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+
+  if (listError) {
+    throw new Error(`Unable to check image bucket: ${listError.message}`);
+  }
+
+  if (buckets.some((bucket) => bucket.name === GENERATED_IMAGES_BUCKET)) {
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(GENERATED_IMAGES_BUCKET, {
+    public: true,
+    allowedMimeTypes: ["image/png"],
+    fileSizeLimit: "10MB",
+  });
+
+  if (createError) {
+    throw new Error(`Unable to create image bucket: ${createError.message}`);
+  }
+}
 
 export async function uploadGeneratedImage(
   supabase: SupabaseClient<Database>,
@@ -11,7 +33,7 @@ export async function uploadGeneratedImage(
   const bytes = Buffer.from(input.base64Image, "base64");
   const storagePath = `${input.userId}/${crypto.randomUUID()}.png`;
 
-  const { error } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, {
+  const { error } = await supabase.storage.from(GENERATED_IMAGES_BUCKET).upload(storagePath, bytes, {
     contentType,
     upsert: false,
   });
@@ -20,7 +42,7 @@ export async function uploadGeneratedImage(
     throw new Error(`Unable to upload image: ${error.message}`);
   }
 
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+  const { data } = supabase.storage.from(GENERATED_IMAGES_BUCKET).getPublicUrl(storagePath);
 
   return {
     storagePath,
