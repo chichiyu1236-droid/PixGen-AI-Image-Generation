@@ -18,6 +18,10 @@ type GenerationResult = {
   };
 };
 
+type GenerateError = {
+  error: string;
+};
+
 export function GenerationForm({ credits, initialValues = {} }: { credits: number; initialValues?: Partial<GenerateRequest> }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -82,16 +86,21 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await response.json()) as GenerationResult | { error: string };
+      const body = await readJsonResponse<GenerationResult | GenerateError>(response);
 
       if (!response.ok) {
-        setError("error" in body ? body.error : "generation_failed");
+        setError(body && "error" in body ? body.error : "generation_failed");
         return;
       }
 
-      setImageUrl((body as GenerationResult).generation.image_url);
-      setGenerationId((body as GenerationResult).generation.id);
-      setGenerationFeedback((body as GenerationResult).generation.feedback);
+      if (!body || !("generation" in body)) {
+        setError("generation_failed");
+        return;
+      }
+
+      setImageUrl(body.generation.image_url);
+      setGenerationId(body.generation.id);
+      setGenerationFeedback(body.generation.feedback);
       router.refresh();
     } catch {
       setError("network_error");
@@ -182,6 +191,14 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
       </section>
     </div>
   );
+}
+
+async function readJsonResponse<T>(response: Response) {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 function getErrorMessage(error: string) {

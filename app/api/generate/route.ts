@@ -74,7 +74,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "image_generation_failed" }, { status: 500 });
   }
 
-  const uploaded = await uploadGeneratedImage(admin, { userId: user.id, base64Image });
+  let uploaded: Awaited<ReturnType<typeof uploadGeneratedImage>>;
+
+  try {
+    uploaded = await uploadGeneratedImage(admin, { userId: user.id, base64Image });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "storage_unavailable" }, { status: 500 });
+  }
 
   const { data: generation, error } = await admin.rpc("record_successful_generation", {
     p_user_id: user.id,

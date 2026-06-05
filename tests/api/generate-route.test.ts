@@ -180,4 +180,37 @@ describe("POST /api/generate", () => {
     expect(body.error).toBe("storage_unavailable");
     expect(generateImageBase64).not.toHaveBeenCalled();
   });
+
+  it("returns a structured error when generated image upload fails", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: { user: { id: "user-1" } },
+          error: null,
+        })),
+      },
+    } as never);
+    vi.mocked(ensureUserProfile).mockResolvedValue(true);
+    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(uploadGeneratedImage).mockRejectedValue(new Error("Upload failed"));
+
+    const request = new Request("http://localhost/api/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        imageType: "ecommerce_hero",
+        aspectRatio: "square",
+        style: "premium_minimal",
+        scene: "studio",
+        whitespace: "balanced",
+        subject: "white running shoes",
+        extra: "",
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("storage_unavailable");
+  });
 });
