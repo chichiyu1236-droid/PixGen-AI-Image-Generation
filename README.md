@@ -11,10 +11,19 @@ Production-ready MVP for structured GPT Image generation.
 
 ## Local Setup
 
-1. Copy `.env.example` to `.env.local`.
-2. Fill in OpenAI and Supabase environment variables.
-3. Run `npm install`.
-4. Apply `supabase/migrations/0001_initial.sql` to Supabase.
+1. Create `.env.local` in the project root with the following variables (all `.env*` files are git-ignored):
+
+   ```env
+   OPENAI_API_KEY=your-openai-api-key
+   OPENAI_IMAGE_MODEL=gpt-image2
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   ```
+
+2. Run `npm install`.
+3. Apply the SQL migrations in `supabase/migrations/` to Supabase.
 5. Create a public Supabase Storage bucket named `generated-images`.
 6. Enable Google OAuth and set callback URL to `http://localhost:3000/auth/callback`.
 7. Run `npm run dev`.
