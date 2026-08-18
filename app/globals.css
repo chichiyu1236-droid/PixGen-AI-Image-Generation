@@ -3,18 +3,36 @@
 @tailwind utilities;
 
 :root {
-  color: #141414;
-  background: #fbfaf7;
+  --page-bg: #fcfcfa;
+  --ink: #111111;
+  --muted: #676f69;
+  --line: rgba(17, 17, 17, 0.08);
+  --soft: rgba(17, 17, 17, 0.03);
+  --page-accent: #eef4ee;
+  --page-accent-2: #f6f7f2;
+  --font-display: "Noto Serif SC", "Times New Roman", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: Arial, "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(181, 202, 182, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(222, 228, 219, 0.22), transparent 24%),
+    linear-gradient(180deg, #ffffff 0%, #f8f8f5 100%);
+  color: var(--ink);
+  font-family: var(--font-body);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -22,4 +40,46 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+::selection {
+  background: var(--ink);
+  color: #fffdf8;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+.reveal {
+  opacity: 0.7;
+  transform: translateY(18px);
+  transition:
+    opacity 820ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 820ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }

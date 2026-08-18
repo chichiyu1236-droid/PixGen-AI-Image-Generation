@@ -41,14 +41,14 @@ export function GenerationFeedback({
   }
 
   return (
-    <div className="mt-3 flex flex-wrap gap-2 text-sm">
+    <div className="mt-4 flex flex-wrap gap-2 text-sm">
       <button
         type="button"
         disabled={saving}
         onClick={() => void updateFeedback("liked")}
         className={[
-          "inline-flex items-center gap-1 rounded-md border px-3 py-2 font-semibold transition disabled:opacity-60",
-          feedback === "liked" ? "border-green-200 bg-green-50 text-green-700" : "border-ink/20",
+          "inline-flex items-center gap-1 rounded-full border px-4 py-2 font-semibold transition disabled:opacity-60",
+          feedback === "liked" ? "border-black bg-black text-white" : "border-black/10 bg-white text-black hover:border-black/25",
         ].join(" ")}
       >
         <ThumbsUp size={15} />
@@ -59,15 +59,15 @@ export function GenerationFeedback({
         disabled={saving}
         onClick={() => void updateFeedback("disliked")}
         className={[
-          "inline-flex items-center gap-1 rounded-md border px-3 py-2 font-semibold transition disabled:opacity-60",
-          feedback === "disliked" ? "border-red-200 bg-red-50 text-red-700" : "border-ink/20",
+          "inline-flex items-center gap-1 rounded-full border px-4 py-2 font-semibold transition disabled:opacity-60",
+          feedback === "disliked" ? "border-black bg-black text-white" : "border-black/10 bg-white text-black hover:border-black/25",
         ].join(" ")}
       >
         <ThumbsDown size={15} />
         不满意
       </button>
       {regenerateHref ? (
-        <Link className="inline-flex items-center gap-1 rounded-md bg-ink px-3 py-2 font-semibold text-white" href={regenerateHref}>
+        <Link className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-4 py-2 font-semibold text-black transition hover:border-black/25" href={regenerateHref}>
           <RotateCw size={15} />
           重新生成
         </Link>

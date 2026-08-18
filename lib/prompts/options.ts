@@ -45,7 +45,7 @@ export const aspectRatios = {
 
 export const styles = {
   premium_minimal: {
-    label: "高级极简",
+    label: "极简高级",
     prompt: "premium minimal commercial photography",
   },
   soft_realistic: {
@@ -53,7 +53,7 @@ export const styles = {
     prompt: "soft realistic editorial photography",
   },
   vibrant_ad: {
-    label: "鲜明广告",
+    label: "明亮广告感",
     prompt: "vibrant high-impact advertising visual",
   },
   soft_3d: {
@@ -76,7 +76,7 @@ export const scenes = {
     prompt: "clean professional studio environment",
   },
   lifestyle: {
-    label: "生活方式",
+    label: "生活场景",
     prompt: "natural lifestyle environment with believable context",
   },
   outdoor: {

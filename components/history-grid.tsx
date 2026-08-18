@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Download, RotateCw } from "lucide-react";
+import { Copy, Download, RotateCw, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -58,19 +58,28 @@ export function HistoryGrid({ generations }: { generations: Generation[] }) {
   }
 
   if (generations.length === 0) {
-    return <div className="rounded-lg border border-ink/10 bg-white p-8 text-center text-ink/60">还没有生成记录。</div>;
+    return (
+      <div className="rounded-[2rem] border border-black/10 bg-white p-10 text-center shadow-[0_18px_50px_rgba(0,0,0,0.04)]">
+        <Sparkles className="mx-auto text-black/35" size={28} />
+        <h2 className="mt-5 text-2xl font-light text-black">还没有生成过图片</h2>
+        <p className="mt-3 text-sm leading-6 text-black/58">生成第一张图片后，它会出现在这里。</p>
+        <Link className="mt-6 inline-flex rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-black/90" href="/generate">
+          去生成第一张图片
+        </Link>
+      </div>
+    );
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink/10 bg-white px-4 py-3">
-        <p className="text-sm text-ink/60">共 {generations.length} 张图片，每次成功生成消耗 1 积分。</p>
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          时间排序
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-[1.5rem] border border-black/10 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.04)]">
+        <p className="text-sm text-black/58">共 {generations.length} 张图片。成功生成的图片会消耗 1 积分。</p>
+        <label className="flex items-center gap-2 text-sm font-semibold text-black">
+          排序
           <select
             value={sortOrder}
             onChange={(event) => setSortOrder(event.target.value as SortOrder)}
-            className="rounded-md border border-ink/15 bg-white px-3 py-2 font-normal outline-none transition focus:border-steel"
+            className="rounded-full border border-black/10 bg-[#f8faf7] px-4 py-2 font-normal text-black outline-none transition focus:border-black/30 focus:bg-white"
           >
             <option value="newest">最新优先</option>
             <option value="oldest">最早优先</option>
@@ -78,52 +87,63 @@ export function HistoryGrid({ generations }: { generations: Generation[] }) {
         </label>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {sortedGenerations.map((item) => (
-          <article key={item.id} className="rounded-lg border border-ink/10 bg-white p-4 shadow-sm">
-            {item.image_url ? (
-              <Image className="aspect-square w-full rounded-md object-cover" src={item.image_url} alt={item.input_subject} width={512} height={512} />
-            ) : null}
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {sortedGenerations.map((item) => {
+          const regenerateHref = buildRegenerateHref(item);
 
-            <div className="mt-3 flex items-center justify-between gap-3 text-sm">
-              <time className="text-ink/50">{new Date(item.created_at).toLocaleString("zh-CN")}</time>
-              <span className="rounded-full bg-ink/5 px-2 py-1 font-semibold text-ink/60">-1 积分</span>
-            </div>
+          return (
+            <article key={item.id} className="overflow-hidden rounded-[2rem] border border-black/10 bg-white shadow-[0_18px_50px_rgba(0,0,0,0.04)]">
+              <div className="border-b border-black/10 bg-[#f8faf7] p-4">
+                <div className="flex items-center justify-between text-sm text-black/52">
+                  <time>{new Date(item.created_at).toLocaleString("zh-CN")}</time>
+                  <span className="rounded-full border border-black/10 bg-white px-3 py-1 font-semibold text-black">-1 积分</span>
+                </div>
+              </div>
 
-            <h2 className="mt-2 line-clamp-2 font-semibold">{item.input_subject}</h2>
-            {item.input_extra ? <p className="mt-2 line-clamp-2 text-sm text-ink/60">{item.input_extra}</p> : null}
-
-            <details className="mt-3 text-sm">
-              <summary className="cursor-pointer font-semibold">查看最终提示词</summary>
-              <p className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-paper p-3 text-ink/70">{item.final_prompt}</p>
-            </details>
-
-            <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
               {item.image_url ? (
-                <a className="inline-flex items-center justify-center gap-1 rounded-md border border-ink/20 px-2 py-2 font-semibold" href={item.image_url} download>
-                  <Download size={15} />
-                  下载
-                </a>
-              ) : (
-                <span />
-              )}
-              <button
-                type="button"
-                onClick={() => void copyPrompt(item)}
-                className="inline-flex items-center justify-center gap-1 rounded-md border border-ink/20 px-2 py-2 font-semibold"
-              >
-                <Copy size={15} />
-                {copiedId === item.id ? "已复制" : "复制"}
-              </button>
-              <Link className="inline-flex items-center justify-center gap-1 rounded-md bg-ink px-2 py-2 font-semibold text-white" href={buildRegenerateHref(item)}>
-                <RotateCw size={15} />
-                重生成
-              </Link>
-            </div>
+                <div className="p-4">
+                  <Image className="aspect-square w-full rounded-[1.5rem] border border-black/10 object-cover" src={item.image_url} alt={item.input_subject} width={512} height={512} />
+                </div>
+              ) : null}
 
-            <GenerationFeedback generationId={item.id} initialFeedback={item.feedback} />
-          </article>
-        ))}
+              <div className="space-y-4 p-5">
+                <div>
+                  <p className="font-display text-xl tracking-[0.08em] text-black/40">主题</p>
+                  <h2 className="mt-2 line-clamp-2 text-2xl font-light leading-tight text-black">{item.input_subject}</h2>
+                  {item.input_extra ? <p className="mt-2 line-clamp-2 text-sm leading-6 text-black/58">{item.input_extra}</p> : null}
+                </div>
+
+                <details className="rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4 text-sm">
+                  <summary className="cursor-pointer font-semibold text-black">查看提示词</summary>
+                  <p className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap text-black/70">{item.final_prompt}</p>
+                </details>
+
+                <div className="flex flex-wrap gap-2 text-sm">
+                  {item.image_url ? (
+                    <a className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 font-semibold text-black transition hover:border-black/25" href={item.image_url} download>
+                      <Download size={15} />
+                      下载
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void copyPrompt(item)}
+                    className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 font-semibold text-black transition hover:border-black/25"
+                  >
+                    <Copy size={15} />
+                    {copiedId === item.id ? "已复制" : "复制提示词"}
+                  </button>
+                  <Link className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 font-semibold text-white transition hover:bg-black/90" href={regenerateHref}>
+                    <RotateCw size={15} />
+                    重新生成
+                  </Link>
+                </div>
+
+                <GenerationFeedback generationId={item.id} initialFeedback={item.feedback} />
+              </div>
+            </article>
+          );
+        })}
       </div>
     </div>
   );
