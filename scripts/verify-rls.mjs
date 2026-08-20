@@ -180,6 +180,145 @@ try {
       error ? error.message : setZeroError?.message ?? "no error raised",
     );
   }
+  // 9. Billing: orders RLS. A sees own orders only; anon sees none; A cannot insert.
+  {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const { data: orderA, error: insertAError } = await admin
+      .from("orders")
+      .insert({
+        user_id: userA.id,
+        pack_id: "starter-20",
+        credits: 20,
+        amount_fen: 990,
+        channel: "wechat",
+        provider: "rls-check",
+        expires_at: expiresAt,
+      })
+      .select()
+      .single();
+    const { data: orderB } = await admin
+      .from("orders")
+      .insert({
+        user_id: userB.id,
+        pack_id: "starter-20",
+        credits: 20,
+        amount_fen: 990,
+        channel: "alipay",
+        provider: "rls-check",
+        expires_at: expiresAt,
+      })
+      .select()
+      .single();
+
+    const { data: ownRows, error: ownError } = await clientA.from("orders").select("id").eq("user_id", userA.id);
+    const { data: bRows, error: bError } = await clientA.from("orders").select("id").eq("user_id", userB.id);
+    check(
+      "A sees only own orders",
+      !insertAError && Boolean(orderA) && Boolean(orderB) && !ownError && !bError && ownRows.length === 1 && bRows.length === 0,
+      insertAError?.message ?? ownError?.message ?? bError?.message ?? "",
+    );
+
+    {
+      const anon = createClient(url, anonKey);
+      const { data, error } = await anon.from("orders").select("id");
+      check("anonymous client sees no orders", !error && data.length === 0, error?.message ?? "");
+    }
+
+    {
+      const { error: userInsertError } = await clientA.from("orders").insert({
+        user_id: userA.id,
+        pack_id: "starter-20",
+        credits: 20,
+        amount_fen: 990,
+        channel: "wechat",
+        provider: "rls-check",
+        expires_at: expiresAt,
+      });
+      check("A cannot insert orders", Boolean(userInsertError), userInsertError ? "" : "INSERT ALLOWED");
+    }
+
+    // 10. fulfill_order is idempotent: two calls grant credits exactly once.
+    {
+      const creditsBefore = await getProfileCredits(userA.id);
+      const first = await admin.rpc("fulfill_order", { p_order_id: orderA.id, p_provider_trade_no: "rls-trade-a" });
+      const second = await admin.rpc("fulfill_order", { p_order_id: orderA.id, p_provider_trade_no: "rls-trade-a" });
+      const creditsAfter = await getProfileCredits(userA.id);
+      const { count } = await admin
+        .from("credit_events")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userA.id)
+        .eq("type", "purchase");
+      check(
+        "fulfill_order double call grants credits once",
+        !first.error && !second.error && creditsAfter - creditsBefore === orderA.credits && count === 1,
+        `${first.error?.message ?? ""} ${second.error?.message ?? ""} ${creditsBefore} -> ${creditsAfter}, purchase events: ${count}`,
+      );
+    }
+
+    // 11. fulfill_order covers money-first expiry: expired -> paid still delivers.
+    {
+      const { error: expireError } = await admin.from("orders").update({ status: "expired" }).eq("id", orderB.id);
+      const creditsBefore = await getProfileCredits(userB.id);
+      const fulfilled = await admin.rpc("fulfill_order", { p_order_id: orderB.id, p_provider_trade_no: "rls-trade-b" });
+      const creditsAfter = await getProfileCredits(userB.id);
+      check(
+        "fulfill_order delivers on expired order (money in, credits out)",
+        !expireError && !fulfilled.error && creditsAfter - creditsBefore === orderB.credits,
+        fulfilled.error?.message ?? expireError?.message ?? `${creditsBefore} -> ${creditsAfter}`,
+      );
+    }
+
+    // 12. adjust_credits: atomic add/deduct, admin_adjustment event, overdraft refused.
+    {
+      const creditsBefore = await getProfileCredits(userB.id);
+      const add = await admin.rpc("adjust_credits", {
+        p_user_id: userB.id,
+        p_amount: 5,
+        p_reason: "RLS verify add",
+        p_type: "admin_adjustment",
+      });
+      const deduct = await admin.rpc("adjust_credits", {
+        p_user_id: userB.id,
+        p_amount: -3,
+        p_reason: "RLS verify deduct",
+        p_type: "admin_adjustment",
+      });
+      const overdraft = await admin.rpc("adjust_credits", {
+        p_user_id: userB.id,
+        p_amount: -99999,
+        p_reason: "RLS verify overdraft",
+        p_type: "admin_adjustment",
+      });
+      const creditsAfter = await getProfileCredits(userB.id);
+      const { count } = await admin
+        .from("credit_events")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userB.id)
+        .eq("type", "admin_adjustment");
+      check(
+        "adjust_credits adds/deducts atomically and refuses overdraft",
+        !add.error && !deduct.error && Boolean(overdraft.error) && overdraft.error.message.includes("insufficient_credits")
+          && creditsAfter - creditsBefore === 2 && count === 2,
+        `${add.error?.message ?? ""} ${deduct.error?.message ?? ""} ${overdraft.error?.message ?? "no overdraft error"}`,
+      );
+    }
+
+    // 13. Non-service callers cannot execute the billing RPCs.
+    {
+      const { error: fulfillError } = await clientA.rpc("fulfill_order", { p_order_id: orderA.id, p_provider_trade_no: "x" });
+      const { error: adjustError } = await clientA.rpc("adjust_credits", {
+        p_user_id: userA.id,
+        p_amount: 100,
+        p_reason: "escalation attempt",
+        p_type: "admin_adjustment",
+      });
+      check(
+        "anon/user client cannot call fulfill_order or adjust_credits",
+        Boolean(fulfillError) && Boolean(adjustError),
+        `fulfill: ${fulfillError ? fulfillError.message : "ALLOWED"} / adjust: ${adjustError ? adjustError.message : "ALLOWED"}`,
+      );
+    }
+  }
 } catch (error) {
   console.error(`\nAborted: ${error.message}`);
 } finally {

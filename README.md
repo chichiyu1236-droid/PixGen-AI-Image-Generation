@@ -20,6 +20,10 @@ Production-ready MVP for structured GPT Image generation.
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   BILLING_PROVIDER=mock
+   MOCK_APP_SECRET=mock-secret
+   ALLOW_MOCK_IN_PRODUCTION=true
+   ORDER_TTL_MINUTES=15
    ```
 
 2. Run `npm install`.
@@ -51,6 +55,15 @@ Deploy to Vercel and set:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SITE_URL`
 - `ADMIN_EMAILS` (optional; comma-separated admin emails for `/admin/credits`)
+- `BILLING_PROVIDER` (`mock` for dev/test, `lantu` or `xunhupay` for production)
+- `LANTU_MCH_ID` (蓝兔商户号, required when `BILLING_PROVIDER=lantu`)
+- `LANTU_APP_SECRET` (蓝兔应用密钥, required when `BILLING_PROVIDER=lantu`)
+- `LANTU_API_BASE` (default: `https://api.ltzf.cn`)
+- `XUNHUPAY_APP_ID` (虎皮椒 App ID, required when `BILLING_PROVIDER=xunhupay`)
+- `XUNHUPAY_APP_SECRET` (虎皮椒 App Secret, required when `BILLING_PROVIDER=xunhupay`)
+- `XUNHUPAY_API_BASE` (default: `https://api.xunhupay.com`)
+- `ORDER_TTL_MINUTES` (order expiry, default: 15)
+- `ALLOW_MOCK_IN_PRODUCTION` (set `true` to allow mock payment in production for demo/testing)
 
 The default image model is `gpt-image2`. If your OpenAI account or region does not support it, set `OPENAI_IMAGE_MODEL` to another image model available to your account.
 
@@ -67,3 +80,37 @@ Add the production auth callback URL in Supabase:
 ```text
 https://YOUR_DOMAIN/auth/callback
 ```
+
+### Billing / Payments
+
+The billing system supports credit pack purchases via aggregator payment platforms (蓝兔/虎皮椒).
+
+**Environment variables:**
+
+| Variable | Required | Description |
+|---|---|---|
+| `BILLING_PROVIDER` | Yes | `mock` (dev/test), `lantu` or `xunhupay` (production) |
+| `LANTU_MCH_ID` | When `lantu` | 蓝兔商户号 |
+| `LANTU_APP_SECRET` | When `lantu` | 蓝兔应用密钥 |
+| `LANTU_API_BASE` | No | Default: `https://api.ltzf.cn` |
+| `XUNHUPAY_APP_ID` | When `xunhupay` | 虎皮椒 App ID |
+| `XUNHUPAY_APP_SECRET` | When `xunhupay` | 虎皮椒 App Secret |
+| `XUNHUPAY_API_BASE` | No | Default: `https://api.xunhupay.com` |
+| `MOCK_APP_SECRET` | No | Mock provider secret (default: `mock-secret`) |
+| `ORDER_TTL_MINUTES` | No | Order expiry in minutes (default: 15) |
+
+**Deployment checklist:**
+
+1. Apply `supabase/migrations/0003_billing.sql` (adds `orders` table, `fulfill_order` and `adjust_credits` RPCs).
+2. Set `BILLING_PROVIDER=mock` and deploy to verify the checkout flow end-to-end.
+3. Register with 蓝兔 or 虎皮椒, obtain merchant credentials, and set `BILLING_PROVIDER` accordingly (`lantu` or `xunhupay`) with the platform keys.
+4. Configure the webhook URL `https://YOUR_DOMAIN/api/webhooks/lantu` on the payment platform.
+5. Run a small real payment test (self-purchase) to verify the full callback → fulfillment → credit grant flow.
+
+**Manual credit adjustment:**
+
+Admins can adjust credits via `/admin/credits` or the Supabase dashboard. The `adjust_credits` RPC ensures atomicity and correct event type (`admin_adjustment`). This serves as a fallback if the payment platform has issues.
+
+**Platform balance:**
+
+Withdraw aggregator platform balances regularly — these are individual-account aggregators, not official merchant accounts.

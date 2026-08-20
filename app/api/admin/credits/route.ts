@@ -6,7 +6,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const creditAdjustmentSchema = z.object({
   email: z.string().email(),
-  amount: z.coerce.number().int().min(1).max(10000),
+  amount: z.coerce
+    .number()
+    .int()
+    .refine((value) => value !== 0, "Amount must not be zero")
+    .refine((value) => Math.abs(value) <= 10000, "Amount out of range"),
   reason: z.string().trim().min(2).max(200).default("Admin credit top-up"),
 });
 
@@ -29,7 +33,7 @@ export async function POST(request: Request) {
   const admin = createSupabaseAdminClient();
   const { data: profile, error: profileError } = await admin
     .from("profiles")
-    .select("id,email,credits")
+    .select("id,email")
     .eq("email", parsed.data.email)
     .maybeSingle();
 
@@ -41,31 +45,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "profile_not_found" }, { status: 404 });
   }
 
-  const nextCredits = profile.credits + parsed.data.amount;
-  const { error: updateError } = await admin
-    .from("profiles")
-    .update({ credits: nextCredits, updated_at: new Date().toISOString() })
-    .eq("id", profile.id);
-
-  if (updateError) {
-    return NextResponse.json({ error: "credit_update_failed" }, { status: 500 });
-  }
-
-  const { error: eventError } = await admin.from("credit_events").insert({
-    user_id: profile.id,
-    type: "signup_bonus",
-    amount: parsed.data.amount,
-    reason: `Admin credit top-up: ${parsed.data.reason}`,
+  const { data: credits, error: adjustError } = await admin.rpc("adjust_credits", {
+    p_user_id: profile.id,
+    p_amount: parsed.data.amount,
+    p_reason: `Admin adjustment: ${parsed.data.reason}`,
+    p_type: "admin_adjustment",
   });
 
-  if (eventError) {
-    return NextResponse.json({ error: "credit_event_failed" }, { status: 500 });
+  if (adjustError) {
+    const message = adjustError.message.includes("insufficient_credits")
+      ? "insufficient_credits"
+      : "credit_update_failed";
+    return NextResponse.json({ error: message }, { status: adjustError.message.includes("insufficient_credits") ? 409 : 500 });
   }
 
   return NextResponse.json({
     profile: {
       email: profile.email,
-      credits: nextCredits,
+      credits,
     },
   });
 }

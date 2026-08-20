@@ -1,4 +1,5 @@
 import { GoogleLoginButton } from "@/components/auth-button";
+import { EmailLoginForm } from "@/components/email-login-form";
 
 export default function LoginPage() {
   return (
@@ -9,6 +10,10 @@ export default function LoginPage() {
         <p className="mt-4 text-sm leading-7 text-black/58">使用 Google 登录即可开始。新用户会自动获得 5 个积分，后续可联系管理员补发测试积分。</p>
         <div className="mt-8">
           <GoogleLoginButton className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/90" />
+        </div>
+        <div className="mt-6 border-t border-black/10 pt-6">
+          <p className="mb-4 text-center text-sm text-black/50">或使用邮箱密码登录</p>
+          <EmailLoginForm />
         </div>
       </section>
     </main>

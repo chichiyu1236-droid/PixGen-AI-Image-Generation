@@ -45,29 +45,20 @@ describe("POST /api/admin/credits", () => {
     expect(body.error).toBe("forbidden");
   });
 
-  it("adds credits and writes a credit event", async () => {
-    const update = vi.fn(() => ({
-      eq: vi.fn(async () => ({ error: null })),
-    }));
-    const insert = vi.fn(async () => ({ error: null }));
+  it("adds credits via adjust_credits RPC and returns the new balance", async () => {
+    const rpc = vi.fn(async () => ({ data: 23, error: null }));
     const admin = {
-      from: vi.fn((table: string) => {
-        if (table === "profiles") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                maybeSingle: vi.fn(async () => ({
-                  data: { id: "user-1", email: "user@example.com", credits: 3 },
-                  error: null,
-                })),
-              })),
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: { id: "user-1", email: "user@example.com" },
+              error: null,
             })),
-            update,
-          };
-        }
-
-        return { insert };
-      }),
+          })),
+        })),
+      })),
+      rpc,
     };
     vi.mocked(createSupabaseAdminClient).mockReturnValue(admin as never);
 
@@ -81,14 +72,11 @@ describe("POST /api/admin/credits", () => {
 
     expect(response.status).toBe(200);
     expect(body.profile.credits).toBe(23);
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ credits: 23 }));
-    expect(insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: "user-1",
-        type: "signup_bonus",
-        amount: 20,
-        reason: "Admin credit top-up: manual test",
-      }),
-    );
+    expect(rpc).toHaveBeenCalledWith("adjust_credits", {
+      p_user_id: "user-1",
+      p_amount: 20,
+      p_reason: "Admin adjustment: manual test",
+      p_type: "admin_adjustment",
+    });
   });
 });

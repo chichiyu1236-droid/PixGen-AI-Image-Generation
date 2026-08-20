@@ -71,6 +71,9 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
         </div>
         <nav className="flex flex-wrap items-center gap-3">
           <CreditBadge credits={credits} />
+          <Link className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:border-black/25" href="/upgrade">
+            购买积分
+          </Link>
           <Link className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:border-black/20" href="/history">
             历史记录
           </Link>

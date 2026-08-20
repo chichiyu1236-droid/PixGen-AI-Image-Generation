@@ -94,7 +94,7 @@ export type Database = {
           id: string;
           user_id: string;
           generation_id: string | null;
-          type: "signup_bonus" | "generation_charge";
+          type: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment";
           amount: number;
           reason: string;
           created_at: string;
@@ -103,7 +103,7 @@ export type Database = {
           id?: string;
           user_id: string;
           generation_id?: string | null;
-          type: "signup_bonus" | "generation_charge";
+          type: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment";
           amount: number;
           reason: string;
           created_at?: string;
@@ -112,7 +112,7 @@ export type Database = {
           id?: string;
           user_id?: string;
           generation_id?: string | null;
-          type?: "signup_bonus" | "generation_charge";
+          type?: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment";
           amount?: number;
           reason?: string;
           created_at?: string;
@@ -127,6 +127,71 @@ export type Database = {
           },
           {
             foreignKeyName: "credit_events_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      orders: {
+        Row: {
+          id: string;
+          user_id: string;
+          pack_id: string;
+          credits: number;
+          amount_fen: number;
+          status: "pending" | "paid" | "expired" | "failed" | "flagged";
+          channel: "wechat" | "alipay";
+          provider: string;
+          provider_trade_no: string | null;
+          pay_url: string | null;
+          raw_notify: Json | null;
+          notified_at: string | null;
+          last_checked_at: string | null;
+          expires_at: string;
+          created_at: string;
+          paid_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          pack_id: string;
+          credits: number;
+          amount_fen: number;
+          status?: "pending" | "paid" | "expired" | "failed" | "flagged";
+          channel: "wechat" | "alipay";
+          provider: string;
+          provider_trade_no?: string | null;
+          pay_url?: string | null;
+          raw_notify?: Json | null;
+          notified_at?: string | null;
+          last_checked_at?: string | null;
+          expires_at: string;
+          created_at?: string;
+          paid_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          pack_id?: string;
+          credits?: number;
+          amount_fen?: number;
+          status?: "pending" | "paid" | "expired" | "failed" | "flagged";
+          channel?: "wechat" | "alipay";
+          provider?: string;
+          provider_trade_no?: string | null;
+          pay_url?: string | null;
+          raw_notify?: Json | null;
+          notified_at?: string | null;
+          last_checked_at?: string | null;
+          expires_at?: string;
+          created_at?: string;
+          paid_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "orders_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
@@ -149,6 +214,22 @@ export type Database = {
           p_aspect_ratio: string;
         };
         Returns: Database["public"]["Tables"]["generations"]["Row"];
+      };
+      fulfill_order: {
+        Args: {
+          p_order_id: string;
+          p_provider_trade_no: string;
+        };
+        Returns: Database["public"]["Tables"]["orders"]["Row"];
+      };
+      adjust_credits: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_reason: string;
+          p_type: string;
+        };
+        Returns: number;
       };
     };
     Enums: Record<string, never>;
