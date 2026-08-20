@@ -156,7 +156,7 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
         </button>
       </form>
 
-      <section className="min-h-[620px] rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
+      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-5">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">PREVIEW</p>
@@ -171,7 +171,7 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
         ) : null}
 
         {loading ? (
-          <div className="grid min-h-[470px] place-items-center rounded-[1.5rem] border border-black/10 bg-[#f8faf7] text-center">
+          <div className="grid min-h-[470px] flex-1 place-items-center rounded-[1.5rem] border border-black/10 bg-[#f8faf7] text-center">
             <div className="w-full max-w-sm px-6">
               <div className="mx-auto grid h-16 w-16 place-items-center rounded-full border border-black/10 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.06)]">
                 <Loader2 className="animate-spin" size={24} />
@@ -207,7 +207,7 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
             </div>
           </div>
         ) : (
-          <div className="grid min-h-[470px] place-items-center rounded-[1.5rem] border border-dashed border-black/15 bg-[#f8faf7] text-center">
+          <div className="grid min-h-[470px] flex-1 place-items-center rounded-[1.5rem] border border-dashed border-black/15 bg-[#f8faf7] text-center">
             <div className="max-w-sm px-6">
               <p className="font-display text-3xl tracking-[0.12em] text-black/36">EMPTY</p>
               <p className="mt-4 text-lg font-light text-black">生成结果会显示在这里</p>
