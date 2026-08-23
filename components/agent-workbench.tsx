@@ -411,50 +411,75 @@ function CanvasCarousel({
   current: CanvasItem;
 }) {
   const selected = current.generationId === selectedId;
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [imgBox, setImgBox] = useState<{ width: number; height: number } | null>(null);
+
+  // Display at the image's own ratio, only ever scaled down to fit the stage
+  // (never blown up to fill it), and anchor all overlays to the image bounds.
+  const fitImage = useCallback((naturalWidth: number, naturalHeight: number) => {
+    const stage = stageRef.current;
+
+    if (!stage) return;
+
+    const scale = Math.min(1, (stage.clientWidth - 32) / naturalWidth, (stage.clientHeight - 32) / naturalHeight);
+    setImgBox({ width: Math.round(naturalWidth * scale), height: Math.round(naturalHeight * scale) });
+  }, []);
+
+  // Refit on image switch before the new bitmap's onLoad lands.
+  useEffect(() => {
+    setImgBox(null);
+  }, [current.generationId]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="group relative grid min-h-[380px] flex-1 place-items-center overflow-hidden rounded-[1.5rem] border border-black/10 bg-[#f8faf7] p-4">
-        <button type="button" onClick={onSelect} className="grid h-full w-full place-items-center" aria-label={`选中 ${current.version}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={current.imageUrl} alt={`画布作品 ${current.version}`} className="max-h-full max-w-full rounded-[1rem] object-contain" />
-        </button>
+      <div ref={stageRef} className="relative grid min-h-[380px] flex-1 place-items-center overflow-hidden rounded-[1.5rem] border border-black/10 bg-[#f8faf7] p-4">
+        <span className="relative inline-flex" style={imgBox ? { width: imgBox.width, height: imgBox.height } : undefined}>
+          <button type="button" onClick={onSelect} className="h-full w-full" aria-label={`选中 ${current.version}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={current.imageUrl}
+              alt={`画布作品 ${current.version}`}
+              onLoad={(event) => fitImage(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+              className="h-full w-full rounded-[1rem] object-contain"
+            />
+          </button>
 
-        <span className="pointer-events-none absolute left-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 font-mono text-[10.5px] text-white backdrop-blur">
-          {current.version}
-          {selected ? <span className="font-sans font-semibold text-[#cfe3d2]">✓ 编辑对象</span> : null}
-        </span>
+          <span className="pointer-events-none absolute left-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 font-mono text-[10.5px] text-white backdrop-blur">
+            {current.version}
+            {selected ? <span className="font-sans font-semibold text-[#cfe3d2]">✓ 编辑对象</span> : null}
+          </span>
 
-        {canvas.length > 1 ? (
-          <>
-            <button
-              type="button"
-              onClick={() => onView(Math.max(0, viewIndex - 1))}
-              disabled={viewIndex <= 0}
-              className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-lg text-white opacity-0 backdrop-blur transition hover:bg-black/65 group-hover:opacity-100 disabled:pointer-events-none"
-              aria-label="上一张"
-            >
-              ‹
-            </button>
-            <button
-              type="button"
-              onClick={() => onView(Math.min(canvas.length - 1, viewIndex + 1))}
-              disabled={viewIndex >= canvas.length - 1}
-              className="absolute right-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-lg text-white opacity-0 backdrop-blur transition hover:bg-black/65 group-hover:opacity-100 disabled:pointer-events-none"
-              aria-label="下一张"
-            >
-              ›
-            </button>
-            <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 backdrop-blur">
-              {canvas.map((item, index) => (
-                <span key={item.generationId} className={`h-1.5 w-1.5 rounded-full ${index === viewIndex ? "bg-white" : "bg-white/40"}`} />
-              ))}
-              <span className="ml-1 font-mono text-[10.5px] text-white">
-                {viewIndex + 1} / {canvas.length}
+          {canvas.length > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onView(Math.max(0, viewIndex - 1))}
+                disabled={viewIndex <= 0}
+                className="absolute left-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/45 text-lg leading-none text-black/65 opacity-80 backdrop-blur-sm transition hover:bg-white/70 hover:opacity-100 disabled:pointer-events-none"
+                aria-label="上一张"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                onClick={() => onView(Math.min(canvas.length - 1, viewIndex + 1))}
+                disabled={viewIndex >= canvas.length - 1}
+                className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/45 text-lg leading-none text-black/65 opacity-80 backdrop-blur-sm transition hover:bg-white/70 hover:opacity-100 disabled:pointer-events-none"
+                aria-label="下一张"
+              >
+                ›
+              </button>
+              <span className="pointer-events-none absolute bottom-2.5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/45 px-3 py-1.5 backdrop-blur-sm">
+                {canvas.map((item, index) => (
+                  <span key={item.generationId} className={`h-1.5 w-1.5 rounded-full ${index === viewIndex ? "bg-black/70" : "bg-black/25"}`} />
+                ))}
+                <span className="ml-1 font-mono text-[10.5px] text-black/65">
+                  {viewIndex + 1} / {canvas.length}
+                </span>
               </span>
-            </div>
-          </>
-        ) : null}
+            </>
+          ) : null}
+        </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
