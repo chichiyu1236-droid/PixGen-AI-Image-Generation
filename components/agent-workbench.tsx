@@ -412,23 +412,33 @@ function CanvasCarousel({
 }) {
   const selected = current.generationId === selectedId;
   const stageRef = useRef<HTMLDivElement>(null);
+  const naturalRef = useRef<{ width: number; height: number } | null>(null);
   const [imgBox, setImgBox] = useState<{ width: number; height: number } | null>(null);
 
   // Display at the image's own ratio, only ever scaled down to fit the stage
   // (never blown up to fill it), and anchor all overlays to the image bounds.
-  const fitImage = useCallback((naturalWidth: number, naturalHeight: number) => {
+  // A ResizeObserver keeps the fit correct however late the bitmap loads or
+  // the panel settles; without it cached images can overflow the stage.
+  const refit = useCallback(() => {
     const stage = stageRef.current;
+    const natural = naturalRef.current;
 
-    if (!stage) return;
+    if (!stage || !natural) return;
 
-    const scale = Math.min(1, (stage.clientWidth - 32) / naturalWidth, (stage.clientHeight - 32) / naturalHeight);
-    setImgBox({ width: Math.round(naturalWidth * scale), height: Math.round(naturalHeight * scale) });
+    const scale = Math.min(1, (stage.clientWidth - 32) / natural.width, (stage.clientHeight - 32) / natural.height);
+    setImgBox({ width: Math.round(natural.width * scale), height: Math.round(natural.height * scale) });
   }, []);
 
-  // Refit on image switch before the new bitmap's onLoad lands.
   useEffect(() => {
-    setImgBox(null);
-  }, [current.generationId]);
+    const stage = stageRef.current;
+
+    if (!stage || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => refit());
+    observer.observe(stage);
+
+    return () => observer.disconnect();
+  }, [refit]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -439,7 +449,10 @@ function CanvasCarousel({
             <img
               src={current.imageUrl}
               alt={`画布作品 ${current.version}`}
-              onLoad={(event) => fitImage(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+              onLoad={(event) => {
+                naturalRef.current = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight };
+                refit();
+              }}
               className="h-full w-full rounded-[1rem] object-contain"
             />
           </button>
