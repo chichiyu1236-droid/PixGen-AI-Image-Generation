@@ -1,8 +1,7 @@
 "use client";
 
-import { Check, Download, Loader2, RefreshCw, Send } from "lucide-react";
-import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { Download, Loader2, RefreshCw, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type TraceItem = {
   type: "step" | "tool" | "image";
@@ -56,14 +55,24 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [spent, setSpent] = useState(0);
+  const [viewIndex, setViewIndex] = useState(0);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
+  // Panel heights are fixed like classic mode; follow new content inside.
   const scrollToEnd = useCallback(() => {
-    // The chat flows naturally and grows the page like the classic form;
-    // follow it by scrolling the document, not an inner container.
     requestAnimationFrame(() => {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+      if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" });
+      }
     });
   }, []);
+
+  // Jump to the newest image whenever the canvas grows.
+  useEffect(() => {
+    if (canvas.length > 0) {
+      setViewIndex(canvas.length - 1);
+    }
+  }, [canvas.length]);
 
   useEffect(() => {
     // Resume the most recent session so a refresh keeps the conversation.
@@ -180,10 +189,11 @@ export function AgentWorkbench({ credits }: { credits: number }) {
 
   const selected = canvas.find((item) => item.generationId === selectedId) ?? null;
   const hasMessages = messages.length > 0;
+  const current = canvas[Math.min(viewIndex, canvas.length - 1)] ?? canvas[canvas.length - 1];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[430px_1fr]">
-      <section className="flex flex-col rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
+    <div className="grid gap-6 lg:grid-cols-[430px_1fr] lg:h-[1035px]">
+      <section className="flex flex-col rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0 lg:overflow-hidden">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">DIALOGUE</p>
@@ -198,7 +208,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
           </button>
         </div>
 
-        <div className="space-y-4 pr-1">
+        <div ref={chatScrollRef} className="mb-4 max-h-[60vh] flex-1 space-y-4 overflow-y-auto pr-1 lg:min-h-0 lg:max-h-none">
           {!hasMessages ? (
             <div className="rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4 text-sm leading-7 text-black/72">
               <p className="font-display text-[13px] tracking-[0.18em] text-black/38">AGENT</p>
@@ -273,7 +283,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         </div>
       </section>
 
-      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
+      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">CANVAS</p>
@@ -293,17 +303,15 @@ export function AgentWorkbench({ credits }: { credits: number }) {
             </div>
           </div>
         ) : (
-          <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(215px,1fr))] gap-4 overflow-y-auto">
-            {canvas.map((item) => (
-              <CanvasCard
-                key={item.generationId}
-                item={item}
-                selected={item.generationId === selectedId}
-                onSelect={() => setSelectedId(item.generationId)}
-                onVariant={() => void send("给这张图生成两个不同配色的变体")}
-              />
-            ))}
-          </div>
+          <CanvasCarousel
+            canvas={canvas}
+            viewIndex={viewIndex}
+            onView={setViewIndex}
+            selectedId={selectedId}
+            onSelect={() => setSelectedId(current.generationId)}
+            onVariant={() => void send("给这张图生成两个不同配色的变体")}
+            current={current}
+          />
         )}
       </section>
     </div>
@@ -376,7 +384,8 @@ function TraceRow({ item, onSelect }: { item: TraceItem; onSelect: (id: string) 
       onClick={() => item.generationId && onSelect(item.generationId)}
       className="relative block w-40 overflow-hidden rounded-[1rem] border border-black/10 transition hover:-translate-y-0.5 hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)]"
     >
-      <Image src={item.imageUrl} alt={`生成结果 ${item.version ?? ""}`.trim()} width={160} height={160} unoptimized className="block h-auto w-full" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={item.imageUrl} alt={`生成结果 ${item.version ?? ""}`.trim()} className="block h-auto w-full" />
       {item.version ? (
         <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 font-mono text-[9.5px] text-white">{item.version}</span>
       ) : null}
@@ -384,45 +393,90 @@ function TraceRow({ item, onSelect }: { item: TraceItem; onSelect: (id: string) 
   );
 }
 
-function CanvasCard({ item, selected, onSelect, onVariant }: { item: CanvasItem; selected: boolean; onSelect: () => void; onVariant: () => void }) {
+function CanvasCarousel({
+  canvas,
+  viewIndex,
+  onView,
+  selectedId,
+  onSelect,
+  onVariant,
+  current,
+}: {
+  canvas: CanvasItem[];
+  viewIndex: number;
+  onView: (index: number) => void;
+  selectedId: string | null;
+  onSelect: () => void;
+  onVariant: () => void;
+  current: CanvasItem;
+}) {
+  const selected = current.generationId === selectedId;
+
   return (
-    <div
-      className={`flex flex-col overflow-hidden rounded-[1.5rem] border bg-white transition ${
-        selected ? "border-[#47624c] shadow-[0_0_0_3px_rgba(71,98,76,0.16)]" : "border-black/10 hover:shadow-[0_14px_40px_rgba(0,0,0,0.08)]"
-      }`}
-    >
-      <button type="button" onClick={onSelect} className="relative block bg-[#f8faf7]" aria-label={`选中 ${item.version}`}>
-        <Image src={item.imageUrl} alt={`画布作品 ${item.version}`} width={430} height={430} unoptimized className="block h-auto w-full" />
-        <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 font-mono text-[9.5px] text-white backdrop-blur">{item.version}</span>
-        {selected ? (
-          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-[#47624c] px-2 py-0.5 text-[10.5px] font-semibold text-white">
-            <Check size={10} aria-hidden /> 编辑对象
-          </span>
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="group relative grid min-h-[380px] flex-1 place-items-center overflow-hidden rounded-[1.5rem] border border-black/10 bg-[#f8faf7] p-4">
+        <button type="button" onClick={onSelect} className="grid h-full w-full place-items-center" aria-label={`选中 ${current.version}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={current.imageUrl} alt={`画布作品 ${current.version}`} className="max-h-full max-w-full rounded-[1rem] object-contain" />
+        </button>
+
+        <span className="pointer-events-none absolute left-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 font-mono text-[10.5px] text-white backdrop-blur">
+          {current.version}
+          {selected ? <span className="font-sans font-semibold text-[#cfe3d2]">✓ 编辑对象</span> : null}
+        </span>
+
+        {canvas.length > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onView(Math.max(0, viewIndex - 1))}
+              disabled={viewIndex <= 0}
+              className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-lg text-white opacity-0 backdrop-blur transition hover:bg-black/65 group-hover:opacity-100 disabled:pointer-events-none"
+              aria-label="上一张"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => onView(Math.min(canvas.length - 1, viewIndex + 1))}
+              disabled={viewIndex >= canvas.length - 1}
+              className="absolute right-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-lg text-white opacity-0 backdrop-blur transition hover:bg-black/65 group-hover:opacity-100 disabled:pointer-events-none"
+              aria-label="下一张"
+            >
+              ›
+            </button>
+            <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 backdrop-blur">
+              {canvas.map((item, index) => (
+                <span key={item.generationId} className={`h-1.5 w-1.5 rounded-full ${index === viewIndex ? "bg-white" : "bg-white/40"}`} />
+              ))}
+              <span className="ml-1 font-mono text-[10.5px] text-white">
+                {viewIndex + 1} / {canvas.length}
+              </span>
+            </div>
+          </>
         ) : null}
-      </button>
-      <div className="flex flex-col gap-1.5 p-3">
-        <p className="flex items-center gap-1.5 text-[13px] font-semibold">
-          <span className="rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[9.5px] font-bold text-black/62">{ORIGIN_LABEL[item.origin]}</span>
-          {item.promptSummary.slice(0, 18)}…
-        </p>
-        {item.basedOn ? <p className="text-[11.5px] leading-4 text-black/48">基于 {item.basedOn} 修改</p> : null}
-        <div className="flex gap-1.5">
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-md bg-black/[0.06] px-1.5 py-0.5 text-[9.5px] font-bold text-black/62">{ORIGIN_LABEL[current.origin]}</span>
+        {current.basedOn ? <span className="text-[11.5px] text-black/48">基于 {current.basedOn} 修改</span> : null}
+        <div className="ml-auto flex gap-1.5">
           <button
             type="button"
             onClick={onSelect}
-            className={`flex-1 rounded-full border px-1 py-1.5 text-[11.5px] transition ${
+            className={`rounded-full border px-3.5 py-1.5 text-xs transition ${
               selected ? "border-[#47624c] bg-[#47624c] text-white" : "border-black bg-black text-white hover:bg-black/90"
             }`}
           >
             选中编辑
           </button>
-          <button type="button" onClick={onVariant} className="flex-1 rounded-full border border-black/12 bg-white px-1 py-1.5 text-[11.5px] text-black/66 transition hover:border-black/35 hover:text-black">
+          <button type="button" onClick={onVariant} className="rounded-full border border-black/12 bg-white px-3.5 py-1.5 text-xs text-black/66 transition hover:border-black/35 hover:text-black">
             变体
           </button>
           <a
-            href={item.imageUrl}
+            href={current.imageUrl}
             download
-            className="grid flex-1 place-items-center rounded-full border border-black/12 bg-white px-1 py-1.5 text-black/66 transition hover:border-black/35 hover:text-black"
+            className="grid place-items-center rounded-full border border-black/12 bg-white px-3.5 py-1.5 text-black/66 transition hover:border-black/35 hover:text-black"
             aria-label="下载图片"
           >
             <Download size={13} aria-hidden />

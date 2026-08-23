@@ -41,6 +41,8 @@ test.describe("Agent workbench", () => {
   });
 
   test("fuzzy -> generate -> edit -> variants with credits and canvas lineage", async ({ page }) => {
+    // Cold Next.js compiles plus remote-Supabase latency exceed the default 30s.
+    test.slow();
     const anon = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -84,7 +86,9 @@ test.describe("Agent workbench", () => {
     await send.click();
     await expect(page.getByText("两个配色变体已经放上画布")).toBeVisible({ timeout: 40_000 });
     await expect(page.getByText("剩余积分：1")).toBeVisible();
-    await expect(page.locator("img[alt^='画布作品']")).toHaveCount(4);
+    await expect(page.getByText("4 / 4")).toBeVisible();
+    await page.getByRole("button", { name: "上一张" }).click();
+    await expect(page.getByAltText("画布作品 图 3 · v3")).toBeVisible();
 
     // Server-side truth: messages, lineage, and credit events.
     const { data: dbSession } = await admin.from("agent_sessions").select("id").eq("user_id", userId).single();
