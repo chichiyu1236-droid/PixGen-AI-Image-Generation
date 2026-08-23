@@ -23,8 +23,8 @@ export function GenerateModes({
   }, [mode]);
 
   return (
-    <div>
-      <div className="mb-6 grid gap-4 md:grid-cols-2">
+    <div className="flex h-full flex-col">
+      <div className="mb-6 grid shrink-0 gap-4 md:grid-cols-2">
         <ModeCard
           active={mode === "classic"}
           onClick={() => setMode("classic")}
@@ -44,8 +44,8 @@ export function GenerateModes({
         />
       </div>
 
-      <div className={mode === "classic" ? "" : "hidden"}>{classicForm}</div>
-      <div className={mode === "agent" ? "" : "hidden"}>{agentWorkbench}</div>
+      <div className={`min-h-0 flex-1 ${mode === "classic" ? "" : "hidden"}`}>{classicForm}</div>
+      <div className={`min-h-0 flex-1 ${mode === "agent" ? "" : "hidden"}`}>{agentWorkbench}</div>
     </div>
   );
 }

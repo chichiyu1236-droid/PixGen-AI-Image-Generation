@@ -183,8 +183,8 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[430px_1fr]">
-      <section className="flex flex-col rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
+    <div className="grid gap-6 lg:h-full lg:min-h-0 lg:grid-cols-[430px_1fr]">
+      <section className="flex flex-col rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">DIALOGUE</p>
@@ -199,7 +199,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
           </button>
         </div>
 
-        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto pr-1 lg:max-h-[520px]">
+        <div ref={scrollRef} className="max-h-[440px] flex-1 space-y-4 overflow-y-auto pr-1 lg:max-h-none lg:min-h-0">
           {!hasMessages ? (
             <div className="rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4 text-sm leading-7 text-black/72">
               <p className="font-display text-[13px] tracking-[0.18em] text-black/38">AGENT</p>
@@ -274,7 +274,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         </div>
       </section>
 
-      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
+      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">CANVAS</p>
@@ -286,7 +286,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         </div>
 
         {canvas.length === 0 ? (
-          <div className="grid min-h-[470px] flex-1 place-items-center rounded-[1.5rem] border border-dashed border-black/15 bg-[#f8faf7] text-center">
+          <div className="grid min-h-[470px] flex-1 place-items-center rounded-[1.5rem] border border-dashed border-black/15 bg-[#f8faf7] text-center lg:min-h-0">
             <div className="max-w-sm px-6">
               <p className="font-display text-3xl tracking-[0.12em] text-black/36">EMPTY</p>
               <p className="mt-3.5 text-lg font-light text-black">聊出来的图会出现在这里</p>
@@ -294,7 +294,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
             </div>
           </div>
         ) : (
-          <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(215px,1fr))] gap-4 overflow-y-auto">
+          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(215px,1fr))] gap-4 overflow-y-auto">
             {canvas.map((item) => (
               <CanvasCard
                 key={item.generationId}
