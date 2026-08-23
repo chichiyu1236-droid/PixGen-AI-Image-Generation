@@ -2,7 +2,7 @@
 
 import { Check, Download, Loader2, RefreshCw, Send } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type TraceItem = {
   type: "step" | "tool" | "image";
@@ -56,13 +56,12 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [spent, setSpent] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const scrollToEnd = useCallback(() => {
+    // The chat flows naturally and grows the page like the classic form;
+    // follow it by scrolling the document, not an inner container.
     requestAnimationFrame(() => {
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
     });
   }, []);
 
@@ -199,7 +198,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
           </button>
         </div>
 
-        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto pr-1 lg:max-h-[520px]">
+        <div className="space-y-4 pr-1">
           {!hasMessages ? (
             <div className="rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4 text-sm leading-7 text-black/72">
               <p className="font-display text-[13px] tracking-[0.18em] text-black/38">AGENT</p>
