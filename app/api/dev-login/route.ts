@@ -20,7 +20,8 @@ export async function GET() {
   const projectRef = new URL(url).hostname.split(".")[0];
   const cookieName = `sb-${projectRef}-auth-token`;
 
-  cookieStore.set(cookieName, Buffer.from(JSON.stringify(data.session)).toString("base64"), {
+  // Match @supabase/ssr >=0.5 cookie encoding: base64url with "base64-" prefix.
+  cookieStore.set(cookieName, `base64-${Buffer.from(JSON.stringify(data.session)).toString("base64url")}`, {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

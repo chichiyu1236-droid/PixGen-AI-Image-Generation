@@ -60,13 +60,17 @@ test.describe("Billing flow", () => {
   });
 
   test("checkout -> cashier page -> mock payment -> success", async ({ page }) => {
+    // Cold Next.js compiles plus remote-Supabase latency exceed the default 30s.
+    test.slow();
     const anon = createClient(supabaseUrl, supabaseAnonKey);
     const { data: { session } } = await anon.auth.signInWithPassword({ email, password });
     expect(session).toBeTruthy();
 
     const ref = projectRef(supabaseUrl);
     const cookieName = `sb-${ref}-auth-token`;
-    const cookieValue = Buffer.from(JSON.stringify(session)).toString("base64");
+    // @supabase/ssr >=0.5 defaults to base64url cookie encoding with the
+    // "base64-" prefix; raw base64 cookies are not decoded server-side.
+    const cookieValue = `base64-${Buffer.from(JSON.stringify(session)).toString("base64url")}`;
 
     await page.context().addCookies([
       { name: cookieName, value: cookieValue, domain: "localhost", path: "/" },
@@ -84,13 +88,18 @@ test.describe("Billing flow", () => {
     await page.waitForURL(/\/pay\//, { timeout: 10_000 });
 
     await expect(page.getByText("CHECKOUT")).toBeVisible();
-    await expect(page.getByText("微信支付")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "微信支付 · ¥9.90" })).toBeVisible();
     await expect(page.getByText("¥9.90")).toBeVisible();
     await expect(page.getByText("20 积分")).toBeVisible();
     await expect(page.getByText("订单有效期剩余")).toBeVisible();
 
-    const qrImage = page.locator("img[alt*='支付二维码']");
-    await expect(qrImage).toBeVisible({ timeout: 10_000 });
+    // The cashier renders a QR code on desktop and a pay-jump link on mobile.
+    if (test.info().project.name === "mobile") {
+      await expect(page.getByRole("link", { name: "打开微信支付" })).toBeVisible();
+    } else {
+      const qrImage = page.locator("img[alt*='支付二维码']");
+      await expect(qrImage).toBeVisible({ timeout: 10_000 });
+    }
 
     const orderUrl = new URL(page.url());
     const orderId = orderUrl.pathname.split("/").pop()!;
@@ -123,6 +132,7 @@ test.describe("Billing flow", () => {
   });
 
   test("cashier page shows 404 for other user's order", async ({ page }) => {
+    test.slow();
     const { data: { user: otherUser } } = await admin.auth.admin.createUser({
       email: `e2e-other-${stamp}@example.com`,
       password: `E2e!Other${stamp}`,
@@ -144,7 +154,7 @@ test.describe("Billing flow", () => {
     const { data: { session } } = await anon.auth.signInWithPassword({ email, password });
     const ref = projectRef(supabaseUrl);
     await page.context().addCookies([
-      { name: `sb-${ref}-auth-token`, value: Buffer.from(JSON.stringify(session)).toString("base64"), domain: "localhost", path: "/" },
+      { name: `sb-${ref}-auth-token`, value: `base64-${Buffer.from(JSON.stringify(session)).toString("base64url")}`, domain: "localhost", path: "/" },
     ]);
 
     await page.goto(`/pay/${order!.id}`);
