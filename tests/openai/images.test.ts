@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateImageBase64 } from "@/lib/openai/images";
+import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 
 vi.mock("server-only", () => ({}));
 
 const openaiMocks = vi.hoisted(() => {
   const generate = vi.fn();
+  const edit = vi.fn();
   const OpenAI = vi.fn(() => ({
     images: {
       generate,
+      edit,
     },
   }));
 
-  return { generate, OpenAI };
+  return { generate, edit, OpenAI };
 });
 
 vi.mock("openai", () => ({
@@ -24,6 +26,9 @@ describe("generateImageBase64", () => {
     process.env.OPENAI_API_KEY = "relay-key";
     process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
     process.env.OPENAI_IMAGE_MODEL = "gpt-image2";
+    process.env.IMAGE_PROVIDER = "openai";
+    process.env.ALLOW_MOCK_IN_PRODUCTION = "false";
+    vi.stubEnv("NODE_ENV", "test");
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
@@ -50,5 +55,56 @@ describe("generateImageBase64", () => {
         quality: "high",
       }),
     );
+  });
+
+  it("returns a placeholder without calling the SDK in mock mode", async () => {
+    process.env.IMAGE_PROVIDER = "mock";
+
+    const image = await generateImageBase64({ prompt: "anything", size: "1024x1024" });
+
+    expect(image.length).toBeGreaterThan(20);
+    expect(openaiMocks.OpenAI).not.toHaveBeenCalled();
+  });
+
+  it("rejects the mock provider in production unless explicitly allowed", async () => {
+    process.env.IMAGE_PROVIDER = "mock";
+    vi.stubEnv("NODE_ENV", "production");
+
+    await expect(generateImageBase64({ prompt: "x", size: "1024x1024" })).rejects.toThrow(
+      "mock_image_provider_forbidden_in_production",
+    );
+
+    process.env.ALLOW_MOCK_IN_PRODUCTION = "true";
+    await expect(generateImageBase64({ prompt: "x", size: "1024x1024" })).resolves.toBeTruthy();
+  });
+});
+
+describe("editImageBase64", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.OPENAI_API_KEY = "relay-key";
+    process.env.IMAGE_PROVIDER = "openai";
+    vi.stubEnv("NODE_ENV", "test");
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+    process.env.NEXT_PUBLIC_SITE_URL = "http://localhost:3000";
+    openaiMocks.edit.mockResolvedValue({
+      data: [{ b64_json: "edited-base64" }],
+    });
+  });
+
+  it("edits via the SDK images endpoint", async () => {
+    const image = await editImageBase64({ prompt: "make it blue", imageBase64: "aGk=" });
+
+    expect(image).toBe("edited-base64");
+    expect(openaiMocks.edit).toHaveBeenCalledWith(expect.objectContaining({ prompt: "make it blue" }));
+  });
+
+  it("returns a placeholder in mock mode", async () => {
+    process.env.IMAGE_PROVIDER = "mock";
+
+    expect(await editImageBase64({ prompt: "x", imageBase64: "aGk=" })).toBeTruthy();
+    expect(openaiMocks.edit).not.toHaveBeenCalled();
   });
 });

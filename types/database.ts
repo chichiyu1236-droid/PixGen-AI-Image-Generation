@@ -47,6 +47,10 @@ export type Database = {
           status: "succeeded" | "failed";
           error_message: string | null;
           feedback: "liked" | "disliked" | null;
+          agent_session_id: string | null;
+          parent_generation_id: string | null;
+          origin: "classic" | "agent" | "agent_edit" | "agent_variant";
+          edit_instruction: string | null;
           created_at: string;
         };
         Insert: {
@@ -62,6 +66,10 @@ export type Database = {
           status: "succeeded" | "failed";
           error_message?: string | null;
           feedback?: "liked" | "disliked" | null;
+          agent_session_id?: string | null;
+          parent_generation_id?: string | null;
+          origin?: "classic" | "agent" | "agent_edit" | "agent_variant";
+          edit_instruction?: string | null;
           created_at?: string;
         };
         Update: {
@@ -77,6 +85,10 @@ export type Database = {
           status?: "succeeded" | "failed";
           error_message?: string | null;
           feedback?: "liked" | "disliked" | null;
+          agent_session_id?: string | null;
+          parent_generation_id?: string | null;
+          origin?: "classic" | "agent" | "agent_edit" | "agent_variant";
+          edit_instruction?: string | null;
           created_at?: string;
         };
         Relationships: [
@@ -85,6 +97,87 @@ export type Database = {
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "generations_agent_session_id_fkey";
+            columns: ["agent_session_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_sessions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "generations_parent_generation_id_fkey";
+            columns: ["parent_generation_id"];
+            isOneToOne: false;
+            referencedRelation: "generations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agent_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          created_at: string;
+          last_message_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title?: string;
+          created_at?: string;
+          last_message_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          created_at?: string;
+          last_message_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_sessions_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agent_messages: {
+        Row: {
+          id: string;
+          session_id: string;
+          role: "user" | "assistant";
+          content: string;
+          trace: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          session_id: string;
+          role: "user" | "assistant";
+          content?: string;
+          trace?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          session_id?: string;
+          role?: "user" | "assistant";
+          content?: string;
+          trace?: Json;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_messages_session_id_fkey";
+            columns: ["session_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_sessions";
             referencedColumns: ["id"];
           },
         ];
@@ -212,6 +305,10 @@ export type Database = {
           p_input_extra: string;
           p_options_json: Json;
           p_aspect_ratio: string;
+          p_agent_session_id?: string;
+          p_parent_generation_id?: string;
+          p_origin?: string;
+          p_edit_instruction?: string;
         };
         Returns: Database["public"]["Tables"]["generations"]["Row"];
       };

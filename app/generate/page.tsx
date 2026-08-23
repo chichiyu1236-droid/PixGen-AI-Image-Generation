@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AgentWorkbench } from "@/components/agent-workbench";
 import { LogoutButton } from "@/components/auth-button";
 import { CreditBadge } from "@/components/credit-badge";
+import { GenerateModes } from "@/components/generate-modes";
 import { GenerationForm } from "@/components/generation-form";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
@@ -60,6 +62,7 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
     .eq("user_id", user.id)
     .eq("status", "succeeded");
   const useExample = !hasPrefill && (count ?? 0) === 0;
+  const mode = getSearchValue(resolvedSearchParams, "mode") === "agent" ? "agent" : "classic";
 
   return (
     <main className="min-h-screen bg-[var(--page-bg)] px-6 py-6 text-[var(--ink)]">
@@ -67,7 +70,7 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
         <div>
           <p className="font-display text-2xl tracking-[0.12em] text-black/40">STUDIO</p>
           <h1 className="mt-2 text-4xl font-light tracking-[0.02em] text-black md:text-5xl">开始生成图片</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-black/58">选好画面方向，写下主体和补充说明。生成结果会自动保存在历史记录里，方便后续继续使用。</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-black/58">两种方式，取决于你现在处于哪种状态：已经有想法，就从经典生成开始；还没有想法，就交给 Agent 聊出来。</p>
         </div>
         <nav className="flex flex-wrap items-center gap-3">
           <CreditBadge credits={credits} />
@@ -82,7 +85,11 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
       </header>
 
       <div className="mx-auto max-w-6xl">
-        <GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} />
+        <GenerateModes
+          initialMode={mode}
+          classicForm={<GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} />}
+          agentWorkbench={<AgentWorkbench credits={credits} />}
+        />
       </div>
     </main>
   );

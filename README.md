@@ -24,7 +24,11 @@ Production-ready MVP for structured GPT Image generation.
    MOCK_APP_SECRET=mock-secret
    ALLOW_MOCK_IN_PRODUCTION=true
    ORDER_TTL_MINUTES=15
+   AGENT_PROVIDER=mock
+   IMAGE_PROVIDER=mock
    ```
+
+   `AGENT_PROVIDER=mock` 与 `IMAGE_PROVIDER=mock` 让 Agent 工作台在本地无需任何外部 LLM/图像 API 即可完整体验；生产环境默认禁止 mock（同 billing 守卫），切真实服务时设置 `AGENT_PROVIDER=real` + `AGENT_LLM_API_KEY`（OpenAI 兼容 function calling，默认智谱 `glm-4.6`），`IMAGE_PROVIDER=openai`。
 
 2. Run `npm install`.
 3. Apply the SQL migrations in `supabase/migrations/` to Supabase.
@@ -64,6 +68,11 @@ Deploy to Vercel and set:
 - `XUNHUPAY_API_BASE` (default: `https://api.xunhupay.com`)
 - `ORDER_TTL_MINUTES` (order expiry, default: 15)
 - `ALLOW_MOCK_IN_PRODUCTION` (set `true` to allow mock payment in production for demo/testing)
+- `AGENT_PROVIDER` (`mock` for dev/test, `real` for production)
+- `AGENT_LLM_BASE_URL` (OpenAI-compatible chat endpoint, default: `https://open.bigmodel.cn/api/paas/v4`)
+- `AGENT_LLM_API_KEY` (required when `AGENT_PROVIDER=real`)
+- `AGENT_LLM_MODEL` (default: `glm-4.6`)
+- `IMAGE_PROVIDER` (`openai` default; `mock` returns placeholder images for dev/test)
 
 The default image model is `gpt-image2`. If your OpenAI account or region does not support it, set `OPENAI_IMAGE_MODEL` to another image model available to your account.
 

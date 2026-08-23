@@ -149,15 +149,19 @@ try {
   }
 
   // 7. User A cannot insert or update profiles.credits from the browser client.
+  //    RLS silently turns a policy-less UPDATE into a no-op (0 rows), so assert
+  //    on the persisted value, not on an error being raised.
   {
+    const creditsBefore = await getProfileCredits(userA.id);
     const { error: updateError } = await clientA.from("profiles").update({ credits: 999 }).eq("id", userA.id);
+    const creditsAfter = await getProfileCredits(userA.id);
     const { error: insertError } = await clientA
       .from("profiles")
       .insert({ id: userA.id, email: userA.email, credits: 999 });
     check(
       "A cannot insert or update profiles.credits",
-      Boolean(updateError) && Boolean(insertError),
-      `update: ${updateError ? updateError.message : "ALLOWED"} / insert: ${insertError ? insertError.message : "ALLOWED"}`,
+      !updateError && creditsAfter === creditsBefore && Boolean(insertError),
+      `credits: ${creditsBefore} -> ${creditsAfter} (update must be a no-op) / insert: ${insertError ? insertError.message : "ALLOWED"}`,
     );
   }
 
@@ -318,6 +322,97 @@ try {
         `fulfill: ${fulfillError ? fulfillError.message : "ALLOWED"} / adjust: ${adjustError ? adjustError.message : "ALLOWED"}`,
       );
     }
+  }
+
+  // 14. Agent workbench: session/message isolation and lineage RPC.
+  {
+    const { data: sessionA } = await admin
+      .from("agent_sessions")
+      .insert({ user_id: userA.id, title: "A 的会话" })
+      .select()
+      .single();
+    const { data: sessionB } = await admin
+      .from("agent_sessions")
+      .insert({ user_id: userB.id, title: "B 的会话" })
+      .select()
+      .single();
+    await admin.from("agent_messages").insert([
+      { session_id: sessionA.id, role: "user", content: "A: 做张海报" },
+      { session_id: sessionB.id, role: "user", content: "B: 做张海报" },
+    ]);
+
+    const { data: ownSessions, error: ownSessionsError } = await clientA
+      .from("agent_sessions")
+      .select("id")
+      .eq("id", sessionA.id);
+    const { data: foreignSessions, error: foreignError } = await clientA
+      .from("agent_sessions")
+      .select("id")
+      .eq("id", sessionB.id);
+    const { data: ownMessages, error: ownMessagesError } = await clientA
+      .from("agent_messages")
+      .select("id")
+      .eq("session_id", sessionA.id);
+    const { data: foreignMessages, error: foreignMessagesError } = await clientA
+      .from("agent_messages")
+      .select("id")
+      .eq("session_id", sessionB.id);
+    const { error: insertError } = await clientA
+      .from("agent_sessions")
+      .insert({ user_id: userA.id });
+    const anon = createClient(url, anonKey);
+    const { data: anonSessions, error: anonError } = await anon.from("agent_sessions").select("id");
+
+    check(
+      "agent sessions/messages isolated per owner; writes service-role only",
+      Boolean(sessionA) && Boolean(sessionB)
+        && !ownSessionsError && ownSessions.length === 1
+        && !foreignError && foreignSessions.length === 0
+        && !ownMessagesError && ownMessages.length === 1
+        && !foreignMessagesError && foreignMessages.length === 0
+        && Boolean(insertError)
+        && !anonError && anonSessions.length === 0,
+      ownSessionsError?.message ?? foreignError?.message ?? ownMessagesError?.message ?? foreignMessagesError?.message
+        ?? insertError?.message ?? "",
+    );
+
+    // Lineage RPC: agent-scoped generation plus an edit child, both linked to A's session.
+    const { data: parent, error: parentError } = await admin.rpc("record_successful_generation", {
+      p_user_id: userA.id,
+      p_image_url: "https://example.com/agent-1.png",
+      p_storage_path: `${userA.id}/agent-1.png`,
+      p_final_prompt: "agent prompt",
+      p_input_subject: "海报",
+      p_input_extra: "",
+      p_options_json: { subject: "海报" },
+      p_aspect_ratio: "square",
+      p_agent_session_id: sessionA.id,
+      p_origin: "agent",
+    });
+    const { data: child, error: childError } = await admin.rpc("record_successful_generation", {
+      p_user_id: userA.id,
+      p_image_url: "https://example.com/agent-2.png",
+      p_storage_path: `${userA.id}/agent-2.png`,
+      p_final_prompt: "agent prompt + edit",
+      p_input_subject: "背景换成樱花",
+      p_input_extra: "",
+      p_options_json: { editOf: parent?.id },
+      p_aspect_ratio: "square",
+      p_agent_session_id: sessionA.id,
+      p_parent_generation_id: parent?.id ?? null,
+      p_origin: "agent_edit",
+      p_edit_instruction: "背景换成樱花",
+    });
+
+    check(
+      "record_successful_generation stores agent lineage",
+      !parentError && !childError
+        && parent?.agent_session_id === sessionA.id && parent?.origin === "agent"
+        && child?.parent_generation_id === parent.id
+        && child?.origin === "agent_edit"
+        && child?.edit_instruction === "背景换成樱花",
+      parentError?.message ?? childError?.message ?? "",
+    );
   }
 } catch (error) {
   console.error(`\nAborted: ${error.message}`);
