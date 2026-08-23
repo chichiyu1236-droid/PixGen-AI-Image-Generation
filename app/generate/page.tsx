@@ -65,8 +65,8 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
   const mode = getSearchValue(resolvedSearchParams, "mode") === "agent" ? "agent" : "classic";
 
   return (
-    <main className="flex min-h-screen flex-col bg-[var(--page-bg)] px-6 py-6 text-[var(--ink)] lg:h-screen lg:overflow-hidden">
-      <header className="mx-auto mb-6 flex w-full max-w-6xl flex-wrap items-end justify-between gap-4 border-b border-black/10 pb-5">
+    <main className="min-h-screen bg-[var(--page-bg)] px-6 py-6 text-[var(--ink)]">
+      <header className="mx-auto mb-8 flex max-w-6xl flex-wrap items-end justify-between gap-4 border-b border-black/10 pb-5">
         <div>
           <p className="font-display text-2xl tracking-[0.12em] text-black/40">STUDIO</p>
           <h1 className="mt-2 text-4xl font-light tracking-[0.02em] text-black md:text-5xl">开始生成图片</h1>
@@ -84,7 +84,7 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
         </nav>
       </header>
 
-      <div className="mx-auto w-full max-w-6xl flex-1 lg:min-h-0">
+      <div className="mx-auto max-w-6xl">
         <GenerateModes
           initialMode={mode}
           classicForm={<GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} />}

@@ -110,8 +110,8 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
   }
 
   return (
-    <div className="grid gap-8 lg:h-full lg:min-h-0 lg:grid-cols-[430px_1fr]">
-      <form onSubmit={onSubmit} className="rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0 lg:overflow-y-auto" aria-busy={loading}>
+    <div className="grid gap-8 lg:grid-cols-[430px_1fr]">
+      <form onSubmit={onSubmit} className="rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur" aria-busy={loading}>
         <div className="mb-6 border-b border-black/10 pb-5">
           <p className="font-display text-2xl tracking-[0.12em] text-black/40">CREATE</p>
           <h2 className="mt-2 text-3xl font-light text-black">告诉我们你想要什么</h2>
@@ -156,7 +156,7 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
         </button>
       </form>
 
-      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0">
+      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-5">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">PREVIEW</p>
@@ -190,11 +190,11 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
             </div>
           </div>
         ) : imageUrl ? (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="rounded-[1.5rem] border border-black/10 bg-[#f8faf7] p-4">
-          <Image className="h-auto w-full rounded-[1rem] border border-black/10 object-cover" src={imageUrl} alt="生成图片结果" width={1024} height={1024} />
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div>
+            <div className="rounded-[1.5rem] border border-black/10 bg-[#f8faf7] p-4">
+              <Image className="h-auto w-full rounded-[1rem] border border-black/10 object-cover" src={imageUrl} alt="生成图片结果" width={1024} height={1024} />
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <a
                 href={imageUrl}
                 download
