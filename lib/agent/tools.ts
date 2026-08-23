@@ -7,7 +7,7 @@ import { getProfileCredits } from "@/lib/auth/profile";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderUnavailable } from "@/lib/openai/provider-health";
 import { buildImagePrompt } from "@/lib/prompts/builder";
-import { aspectRatios } from "@/lib/prompts/options";
+import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 import { generateRequestSchema } from "@/lib/validation/generate";
 import type { ToolDefinition, ToolResult } from "@/lib/agent/types";
@@ -28,18 +28,29 @@ const editImageArgsSchema = z.object({
 
 const listCanvasArgsSchema = z.object({}).strict();
 
+/** Enum field schema listing allowed keys with their Chinese labels. */
+function enumField(label: string, options: Record<string, { label: string }>) {
+  const keys = Object.keys(options);
+
+  return {
+    type: "string",
+    enum: keys,
+    description: `${label}，只能取以下值之一：${keys.map((key) => `${key}（${options[key].label}）`).join("、")}`,
+  };
+}
+
 export const agentToolDefinitions: ToolDefinition[] = [
   {
     name: "build_prompt",
-    description: "把用户的自然语言转成结构化画面字段并产出专业提示词。必须在 generate_image 之前调用。",
+    description: "把用户的自然语言转成结构化画面字段并产出专业提示词。必须在 generate_image 之前调用。所有枚举字段只能取 description 里列出的值。",
     parameters: {
       type: "object",
       properties: {
-        imageType: { type: "string", description: "图片用途" },
-        aspectRatio: { type: "string", description: "画面比例: square | portrait | landscape" },
-        style: { type: "string", description: "画面质感" },
-        scene: { type: "string", description: "场景" },
-        whitespace: { type: "string", description: "留白" },
+        imageType: enumField("图片用途", imageTypes),
+        aspectRatio: enumField("画面比例", aspectRatios),
+        style: enumField("画面质感", styles),
+        scene: enumField("场景", scenes),
+        whitespace: enumField("留白", whitespaceOptions),
         subject: { type: "string", description: "主体描述（必填，至少 2 字）" },
         extra: { type: "string", description: "补充说明，可留空" },
       },
