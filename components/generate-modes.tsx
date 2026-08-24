@@ -93,11 +93,6 @@ function ModeCard({
       >
         {who}
       </span>
-      {active ? (
-        <span className="absolute bottom-4 right-5 grid h-5.5 w-5.5 place-items-center rounded-full bg-black text-[11px] text-white">
-          ✓
-        </span>
-      ) : null}
     </button>
   );
 }
