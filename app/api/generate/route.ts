@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
-import { generateImageBase64 } from "@/lib/openai/images";
+import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderUnavailable } from "@/lib/openai/provider-health";
 import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 
@@ -54,13 +54,22 @@ export async function POST(request: Request) {
   }
 
   const finalPrompt = buildImagePrompt(parsed.data);
+  const referenceImages = parsed.data.referenceImages;
+  const hasReferences = referenceImages.length > 0;
+  const size = aspectRatios[parsed.data.aspectRatio].size;
   let base64Image: string;
 
   try {
-    base64Image = await generateImageBase64({
-      prompt: finalPrompt,
-      size: aspectRatios[parsed.data.aspectRatio].size,
-    });
+    base64Image = hasReferences
+      ? await editImageBase64({
+          prompt: finalPrompt,
+          images: referenceImages.map((image) => image.data),
+          size,
+        })
+      : await generateImageBase64({
+          prompt: finalPrompt,
+          size,
+        });
   } catch (error) {
     const providerErrorReason = getImageProviderErrorReason(error);
 
@@ -83,6 +92,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "storage_unavailable" }, { status: 500 });
   }
 
+  // Reference images are one-shot inputs: persist only source metadata, never the base64 payloads.
+  const referenceMetadata = referenceImages.map((image) =>
+    image.generationId ? { source: "history", generationId: image.generationId } : { source: "upload" },
+  );
+  const parentGenerationId = referenceImages.find((image) => image.generationId)?.generationId ?? null;
+
   const { data: generation, error } = await admin.rpc("record_successful_generation", {
     p_user_id: user.id,
     p_image_url: uploaded.imageUrl,
@@ -90,8 +105,9 @@ export async function POST(request: Request) {
     p_final_prompt: finalPrompt,
     p_input_subject: parsed.data.subject,
     p_input_extra: parsed.data.extra,
-    p_options_json: parsed.data,
+    p_options_json: { ...parsed.data, referenceImages: referenceMetadata },
     p_aspect_ratio: parsed.data.aspectRatio,
+    p_parent_generation_id: parentGenerationId ?? undefined,
   });
 
   if (error) {

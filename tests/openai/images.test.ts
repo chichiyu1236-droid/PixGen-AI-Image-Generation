@@ -95,16 +95,33 @@ describe("editImageBase64", () => {
   });
 
   it("edits via the SDK images endpoint", async () => {
-    const image = await editImageBase64({ prompt: "make it blue", imageBase64: "aGk=" });
+    const image = await editImageBase64({ prompt: "make it blue", images: ["aGk="] });
 
     expect(image).toBe("edited-base64");
     expect(openaiMocks.edit).toHaveBeenCalledWith(expect.objectContaining({ prompt: "make it blue" }));
   });
 
+  it("passes every reference image and the requested size to the SDK edit endpoint", async () => {
+    const image = await editImageBase64({ prompt: "use references", images: ["aGk=", "aGk="], size: "1024x1536" });
+
+    expect(image).toBe("edited-base64");
+    const args = openaiMocks.edit.mock.calls[0][0] as { prompt: string; size: string; image: unknown[] };
+    expect(args.prompt).toBe("use references");
+    expect(args.size).toBe("1024x1536");
+    expect(Array.isArray(args.image)).toBe(true);
+    expect(args.image).toHaveLength(2);
+  });
+
+  it("keeps the size optional for edit calls", async () => {
+    await editImageBase64({ prompt: "x", images: ["aGk="] });
+
+    expect(openaiMocks.edit.mock.calls[0][0]).not.toHaveProperty("size");
+  });
+
   it("returns a placeholder in mock mode", async () => {
     process.env.IMAGE_PROVIDER = "mock";
 
-    expect(await editImageBase64({ prompt: "x", imageBase64: "aGk=" })).toBeTruthy();
+    expect(await editImageBase64({ prompt: "x", images: ["aGk=", "aGk="], size: "1024x1024" })).toBeTruthy();
     expect(openaiMocks.edit).not.toHaveBeenCalled();
   });
 });

@@ -36,4 +36,56 @@ describe("buildImagePrompt", () => {
     expect(prompt).not.toContain("Additional requirements:");
     expect(prompt).toContain("vertical 4:5 composition");
   });
+
+  it("prepends reference guidance for a single reference image", () => {
+    const prompt = buildImagePrompt({
+      imageType: "ecommerce_hero",
+      aspectRatio: "square",
+      style: "premium_minimal",
+      scene: "studio",
+      whitespace: "balanced",
+      subject: "照这个产品出一张节日礼盒场景图",
+      referenceImages: [{ data: "a".repeat(200) }],
+    });
+
+    expect(prompt).toContain("1 reference image is attached");
+    expect(prompt).toContain("brand-new composition");
+    expect(prompt).toContain("not as content to edit, crop, or collage");
+    expect(prompt).toContain("Preserve the recognizable identity of the referenced subject");
+    expect(prompt).toContain("节日礼盒场景图");
+  });
+
+  it("prepends pluralized reference guidance for multiple reference images", () => {
+    const prompt = buildImagePrompt({
+      imageType: "ecommerce_hero",
+      aspectRatio: "square",
+      style: "premium_minimal",
+      scene: "studio",
+      whitespace: "balanced",
+      subject: "产品加氛围参考",
+      referenceImages: [
+        { data: "a".repeat(200) },
+        { data: "b".repeat(200), generationId: "5f0b1c2e-1111-4222-8333-444455556666" },
+      ],
+    });
+
+    expect(prompt).toContain("2 reference images are attached");
+    expect(prompt).toContain("use them as the visual basis");
+  });
+
+  it("keeps the prompt unchanged without reference images", () => {
+    const prompt = buildImagePrompt({
+      imageType: "ecommerce_hero",
+      aspectRatio: "square",
+      style: "premium_minimal",
+      scene: "studio",
+      whitespace: "balanced",
+      subject: "一瓶高端护肤精华",
+      extra: "",
+      referenceImages: [],
+    });
+
+    expect(prompt).not.toContain("reference");
+    expect(prompt.startsWith("Create a high-quality")).toBe(true);
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Download, RotateCw, Sparkles } from "lucide-react";
+import { Copy, Download, ImagePlus, RotateCw, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -133,6 +133,15 @@ export function HistoryGrid({ generations }: { generations: Generation[] }) {
                     <Copy size={15} />
                     {copiedId === item.id ? "已复制" : "复制提示词"}
                   </button>
+                  {item.image_url ? (
+                    <Link
+                      className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 font-semibold text-black transition hover:border-black/25"
+                      href={`/generate?mode=classic&ref=${item.id}`}
+                    >
+                      <ImagePlus size={15} />
+                      用作参考图
+                    </Link>
+                  ) : null}
                   <Link className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 font-semibold text-white transition hover:bg-black/90" href={regenerateHref}>
                     <RotateCw size={15} />
                     重新生成

@@ -41,8 +41,8 @@ export async function generateImageBase64(input: { prompt: string; size: string 
   return image;
 }
 
-/** Instruction-based edit of an existing image (gpt-image-1 /images/edits). */
-export async function editImageBase64(input: { prompt: string; imageBase64: string }) {
+/** Reference-based generation via one or more input images (gpt-image /images/edits). */
+export async function editImageBase64(input: { prompt: string; images: string[]; size?: string }) {
   if (resolveImageProvider() === "mock") {
     return MOCK_IMAGE_BASE64;
   }
@@ -52,8 +52,11 @@ export async function editImageBase64(input: { prompt: string; imageBase64: stri
   const response = await client.images.edit({
     model,
     prompt: input.prompt,
-    image: await toFile(Buffer.from(input.imageBase64, "base64"), "input.png", { type: "image/png" }),
+    image: await Promise.all(
+      input.images.map((data, index) => toFile(Buffer.from(data, "base64"), `input-${index + 1}.png`, { type: "image/png" })),
+    ),
     n: 1,
+    ...(input.size ? { size: input.size as "1024x1024" | "1024x1536" | "1536x1024" } : {}),
   });
 
   const image = response.data?.[0]?.b64_json;

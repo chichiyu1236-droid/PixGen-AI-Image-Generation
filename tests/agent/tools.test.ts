@@ -176,7 +176,7 @@ describe("edit_image", () => {
     const result = await runAgentTool("edit_image", { generationId: GEN_1, instruction: "背景换成樱花色调" }, context(admin));
 
     expect(result.ok).toBe(true);
-    expect(editImageBase64).toHaveBeenCalledWith(expect.objectContaining({ imageBase64: expect.any(String) }));
+    expect(editImageBase64).toHaveBeenCalledWith(expect.objectContaining({ images: [expect.any(String)] }));
     expect(rpc).toHaveBeenCalledWith("record_successful_generation", expect.objectContaining({
       p_parent_generation_id: GEN_1,
       p_origin: "agent_edit",

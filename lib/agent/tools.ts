@@ -253,7 +253,7 @@ async function runEditImage(args: unknown, ctx: ToolContext): Promise<ToolResult
   let base64Image: string;
 
   try {
-    base64Image = await editImageBase64({ prompt: editPrompt, imageBase64: sourceBase64 });
+    base64Image = await editImageBase64({ prompt: editPrompt, images: [sourceBase64] });
   } catch (error) {
     return providerFailure(error);
   }

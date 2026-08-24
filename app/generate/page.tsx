@@ -15,6 +15,8 @@ type GeneratePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type InitialReference = { id: string; url: string };
+
 function getSearchValue(searchParams: Record<string, string | string[] | undefined>, key: string) {
   const value = searchParams[key];
   return typeof value === "string" ? value : undefined;
@@ -64,6 +66,30 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
   const useExample = !hasPrefill && (count ?? 0) === 0;
   const mode = getSearchValue(resolvedSearchParams, "mode") === "agent" ? "agent" : "classic";
 
+  // Reference prefill from history: foreign or stale refs are silently ignored
+  // so the form simply starts empty instead of erroring out.
+  const refId = getSearchValue(resolvedSearchParams, "ref");
+  let initialReference: InitialReference | undefined;
+
+  if (refId) {
+    try {
+      const { data } = await supabase
+        .from("generations")
+        .select("id, image_url")
+        .eq("id", refId)
+        .eq("user_id", user.id)
+        .eq("status", "succeeded")
+        .maybeSingle();
+      const refData = data as { id: string; image_url: string | null } | null;
+
+      if (refData?.image_url) {
+        initialReference = { id: refData.id, url: refData.image_url };
+      }
+    } catch {
+      // An invalid ref id (e.g. non-uuid) makes the query itself fail; ignore it.
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[var(--page-bg)] px-6 py-6 text-[var(--ink)]">
       <header className="mx-auto mb-8 flex max-w-6xl flex-wrap items-end justify-between gap-4 border-b border-black/10 pb-5">
@@ -87,7 +113,7 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
       <div className="mx-auto max-w-6xl">
         <GenerateModes
           initialMode={mode}
-          classicForm={<GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} />}
+          classicForm={<GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} initialReference={initialReference} />}
           agentWorkbench={<AgentWorkbench credits={credits} />}
         />
       </div>

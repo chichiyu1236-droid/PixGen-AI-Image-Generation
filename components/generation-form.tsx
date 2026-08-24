@@ -1,13 +1,15 @@
 "use client";
 
-import { Clock3, Download, Loader2, Sparkles } from "lucide-react";
+import { Clock3, Download, Loader2, Plus, Sparkles, X } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { GenerationFeedback } from "@/components/generation-feedback";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { compressImageToBase64, type ReferenceImageFile } from "@/lib/media/compress-image";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
+import { REFERENCE_IMAGE_LIMITS } from "@/lib/validation/generate";
 import type { GenerateRequest } from "@/lib/validation/generate";
 
 type GenerationResult = {
@@ -22,7 +24,17 @@ type GenerateError = {
   error: string;
 };
 
-export function GenerationForm({ credits, initialValues = {} }: { credits: number; initialValues?: Partial<GenerateRequest> }) {
+const REFERENCE_ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+export function GenerationForm({
+  credits,
+  initialValues = {},
+  initialReference,
+}: {
+  credits: number;
+  initialValues?: Partial<GenerateRequest>;
+  initialReference?: { id: string; url: string };
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +42,10 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [generationFeedback, setGenerationFeedback] = useState<"liked" | "disliked" | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [references, setReferences] = useState<ReferenceImageFile[]>([]);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!loading) {
@@ -44,10 +60,139 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
     return () => window.clearInterval(timer);
   }, [loading]);
 
+  useEffect(() => {
+    if (!initialReference) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setReferenceBusy(true);
+
+      try {
+        const response = await fetch(initialReference.url);
+
+        if (!response.ok) {
+          throw new Error("reference_fetch_failed");
+        }
+
+        const blob = await response.blob();
+        const base64 = await compressImageToBase64(blob);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (base64.length > REFERENCE_IMAGE_LIMITS.maxDataChars) {
+          setReferenceError("参考图加载失败，请手动上传");
+          return;
+        }
+
+        setReferences((current) =>
+          current.length > 0
+            ? current
+            : [
+                {
+                  id: `history-${initialReference.id}`,
+                  previewUrl: URL.createObjectURL(blob),
+                  base64,
+                  generationId: initialReference.id,
+                },
+              ],
+        );
+      } catch {
+        if (!cancelled) {
+          setReferenceError("参考图加载失败，请手动上传");
+        }
+      } finally {
+        if (!cancelled) {
+          setReferenceBusy(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialReference]);
+
+  async function addReferenceFiles(files: FileList | null) {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const incoming = Array.from(files);
+    const unsupported = incoming.find((file) => !REFERENCE_ACCEPTED_TYPES.includes(file.type));
+
+    if (unsupported) {
+      setReferenceError("仅支持 PNG / JPEG / WebP 格式的图片");
+      return;
+    }
+
+    if (references.length + incoming.length > REFERENCE_IMAGE_LIMITS.maxCount) {
+      setReferenceError(`最多添加 ${REFERENCE_IMAGE_LIMITS.maxCount} 张参考图`);
+      return;
+    }
+
+    setReferenceBusy(true);
+    setReferenceError(null);
+
+    try {
+      const added: ReferenceImageFile[] = [];
+
+      for (const file of incoming) {
+        const base64 = await compressImageToBase64(file);
+
+        if (base64.length > REFERENCE_IMAGE_LIMITS.maxDataChars) {
+          setReferenceError("这张图片压缩后仍然过大，请换一张试试");
+          continue;
+        }
+
+        added.push({
+          id: crypto.randomUUID(),
+          previewUrl: URL.createObjectURL(file),
+          base64,
+        });
+      }
+
+      if (added.length > 0) {
+        setReferences((current) => [...current, ...added]);
+      }
+    } catch {
+      setReferenceError("图片读取失败，请重试");
+    } finally {
+      setReferenceBusy(false);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  function removeReference(id: string) {
+    setReferences((current) => {
+      const removed = current.find((reference) => reference.id === id);
+
+      if (removed?.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+
+      return current.filter((reference) => reference.id !== id);
+    });
+    setReferenceError(null);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(formData.entries());
+    const payload: Record<string, unknown> = Object.fromEntries(formData.entries());
+
+    if (references.length > 0) {
+      payload.referenceImages = references.map(({ base64, generationId }) =>
+        generationId ? { data: base64, generationId } : { data: base64 },
+      );
+    }
 
     if (loading) {
       return;
@@ -136,15 +281,61 @@ export function GenerationForm({ credits, initialValues = {} }: { credits: numbe
               defaultValue={initialValues.subject}
             />
           </label>
-          <label className="grid gap-2 text-sm font-semibold text-black">
-            补充说明
-            <textarea
-              name="extra"
-              className="min-h-24 rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4 font-normal text-black outline-none transition placeholder:text-black/42 focus:border-black/30 focus:bg-white"
-              placeholder="例如：背景干净，适合广告图，顶部留出标题空间"
-              defaultValue={initialValues.extra}
+          <div className="grid gap-2">
+            <span className="text-sm font-semibold text-black">参考与补充</span>
+            <div className="grid gap-4 rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4">
+              <div className="grid gap-2">
+                <span className="text-[13px] font-semibold text-black/55">参考图（最多 {REFERENCE_IMAGE_LIMITS.maxCount} 张）</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  {references.map((reference) => (
+                    <div key={reference.id} className="group relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview; no remote optimization needed */}
+                      <img src={reference.previewUrl} alt="参考图" className="h-16 w-16 rounded-[0.75rem] border border-black/10 bg-white object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeReference(reference.id)}
+                        aria-label="移除参考图"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black text-white opacity-0 transition hover:bg-black/85 focus:opacity-100 group-hover:opacity-100"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                  {references.length < REFERENCE_IMAGE_LIMITS.maxCount ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={referenceBusy}
+                      className="grid h-16 w-16 place-items-center rounded-[0.75rem] border border-dashed border-black/20 bg-white/70 text-black/40 transition hover:border-black/40 hover:text-black/70 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {referenceBusy ? <Loader2 className="animate-spin" size={16} /> : <Plus size={18} />}
+                    </button>
+                  ) : null}
+                </div>
+                {references.length >= REFERENCE_IMAGE_LIMITS.maxCount ? (
+                  <p className="text-xs text-black/45">已达 {REFERENCE_IMAGE_LIMITS.maxCount} 张上限</p>
+                ) : null}
+                {referenceError ? <p className="text-xs text-black/62">{referenceError}</p> : null}
+              </div>
+              <label className="grid gap-2 text-[13px] font-semibold text-black/55">
+                补充说明
+                <textarea
+                  name="extra"
+                  className="min-h-20 rounded-[1rem] border border-black/10 bg-white p-3.5 text-sm font-normal text-black outline-none transition placeholder:text-black/42 focus:border-black/30"
+                  placeholder="例如：背景干净，适合广告图，顶部留出标题空间"
+                  defaultValue={initialValues.extra}
+                />
+              </label>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              hidden
+              onChange={(event) => void addReferenceFiles(event.target.files)}
             />
-          </label>
+          </div>
         </div>
 
         <button
