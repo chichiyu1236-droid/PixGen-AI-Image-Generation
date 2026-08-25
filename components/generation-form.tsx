@@ -46,6 +46,7 @@ export function GenerationForm({
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const resultSectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!loading) {
@@ -203,27 +204,34 @@ export function GenerationForm({
       return;
     }
 
-    setError(null);
-    let healthResponse: Response;
-
-    try {
-      healthResponse = await fetch("/api/health/image-provider");
-    } catch {
-      setError("network_error");
-      return;
-    }
-
-    if (!healthResponse.ok) {
-      setError("provider_unavailable");
-      return;
-    }
-
     setLoading(true);
     setElapsedSeconds(0);
     setError(null);
     setImageUrl(null);
     setGenerationId(null);
     setGenerationFeedback(null);
+
+    // On narrow screens the result panel sits below the form; bring it into
+    // view so the loading state (and any later error) is visible right away.
+    if (resultSectionRef.current && window.matchMedia("(max-width: 1023px)").matches) {
+      resultSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    let healthResponse: Response;
+
+    try {
+      healthResponse = await fetch("/api/health/image-provider");
+    } catch {
+      setError("network_error");
+      setLoading(false);
+      return;
+    }
+
+    if (!healthResponse.ok) {
+      setError("provider_unavailable");
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/generate", {
@@ -288,14 +296,14 @@ export function GenerationForm({
                 <span className="text-[13px] font-semibold text-black/55">参考图（最多 {REFERENCE_IMAGE_LIMITS.maxCount} 张）</span>
                 <div className="flex flex-wrap items-center gap-3">
                   {references.map((reference) => (
-                    <div key={reference.id} className="group relative">
+                    <div key={reference.id} className="relative">
                       {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview; no remote optimization needed */}
                       <img src={reference.previewUrl} alt="参考图" className="h-16 w-16 rounded-[0.75rem] border border-black/10 bg-white object-cover" />
                       <button
                         type="button"
                         onClick={() => removeReference(reference.id)}
                         aria-label="移除参考图"
-                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black text-white opacity-0 transition hover:bg-black/85 focus:opacity-100 group-hover:opacity-100"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black text-white transition hover:bg-black/85"
                       >
                         <X size={11} />
                       </button>
@@ -347,7 +355,7 @@ export function GenerationForm({
         </button>
       </form>
 
-      <section className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
+      <section ref={resultSectionRef} className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-5">
           <div>
             <p className="font-display text-2xl tracking-[0.12em] text-black/40">PREVIEW</p>
