@@ -192,7 +192,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const current = canvas[Math.min(viewIndex, canvas.length - 1)] ?? canvas[canvas.length - 1];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[430px_1fr] lg:h-[1035px]">
+    <div className="grid gap-6 lg:grid-cols-[430px_1fr] lg:h-[calc(100vh-25rem)] lg:min-h-[680px]">
       <section className="flex flex-col rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0 lg:overflow-hidden">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-4">
           <div>
@@ -253,13 +253,13 @@ export function AgentWorkbench({ credits }: { credits: number }) {
                 }
               }}
               placeholder="不知道想要什么也没关系，随便说一句…"
-              className="max-h-26 flex-1 resize-none border-none bg-transparent text-sm leading-6 text-black outline-none placeholder:text-black/42"
+              className="max-h-[6.5rem] flex-1 resize-none border-none bg-transparent text-sm leading-6 text-black outline-none placeholder:text-black/42"
             />
             <button
               type="button"
               disabled={busy || !input.trim()}
               onClick={() => void send(input)}
-              className="grid h-9.5 w-9.5 shrink-0 place-items-center rounded-full bg-black text-white transition disabled:opacity-35"
+              className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full bg-black text-white transition disabled:opacity-35"
               aria-label="发送"
             >
               <Send size={15} aria-hidden />
