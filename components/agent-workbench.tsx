@@ -192,7 +192,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const current = canvas[Math.min(viewIndex, canvas.length - 1)] ?? canvas[canvas.length - 1];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[430px_1fr] lg:h-[calc(100vh-25rem)] lg:min-h-[680px]">
+    <div className="grid gap-6 lg:grid-cols-[430px_1fr] lg:h-[calc(100vh-25rem)] lg:min-h-[740px]">
       <section className="flex flex-col rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur lg:min-h-0 lg:overflow-hidden">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-4">
           <div>
