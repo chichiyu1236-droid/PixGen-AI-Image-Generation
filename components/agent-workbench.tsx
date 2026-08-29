@@ -55,6 +55,9 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [spent, setSpent] = useState(0);
+  // Server-reported balance once any turn returns it; falls back to the
+  // page-load snapshot minus locally observed spend before that.
+  const [balance, setBalance] = useState<number | null>(null);
   const [viewIndex, setViewIndex] = useState(0);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -97,7 +100,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
     })();
   }, [scrollToEnd]);
 
-  async function send(text: string) {
+  async function send(text: string, options?: { selectedGenerationId?: string | null }) {
     const trimmed = text.trim();
 
     if (!trimmed || busy) return;
@@ -105,9 +108,12 @@ export function AgentWorkbench({ credits }: { credits: number }) {
     setBusy(true);
     setError(null);
     setInput("");
+    // Tag the optimistic bubble so it can be swapped for the persisted copy
+    // (its server id can never match this local id).
+    const localId = `local-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
-      { id: `local-${Date.now()}`, role: "user", content: trimmed, created_at: new Date().toISOString() },
+      { id: localId, role: "user", content: trimmed, created_at: new Date().toISOString() },
     ]);
     scrollToEnd();
 
@@ -126,15 +132,17 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         setSessionId(currentSession);
       }
 
+      const selectedGenerationId = options?.selectedGenerationId !== undefined ? options.selectedGenerationId : selectedId;
       const response = await fetch(`/api/agent/sessions/${currentSession}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed, selectedGenerationId: selectedId }),
+        body: JSON.stringify({ text: trimmed, selectedGenerationId }),
       });
       const body = (await response.json()) as {
         userMessage?: ChatMessage;
         assistantMessage?: ChatMessage;
         canvas?: CanvasItem[];
+        remainingCredits?: number | null;
         error?: string;
       };
 
@@ -142,13 +150,15 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         throw new Error(body.error ?? "message_failed");
       }
 
-      setMessages((prev) => [
-        ...prev.filter((message) => message.id !== body.userMessage?.id || message.role !== "user"),
-        body.userMessage!,
-        body.assistantMessage!,
-      ]);
+      setMessages((prev) => [...prev.filter((message) => message.id !== localId), body.userMessage!, body.assistantMessage!]);
       setCanvas(body.canvas ?? []);
-      setSpent((current) => current + (body.assistantMessage?.trace ?? []).reduce((sum, item) => sum + (item.type === "tool" ? item.costCredits ?? 0 : 0), 0));
+
+      if (typeof body.remainingCredits === "number") {
+        setBalance(body.remainingCredits);
+        setSpent(0);
+      } else {
+        setSpent((current) => current + (body.assistantMessage?.trace ?? []).reduce((sum, item) => sum + (item.type === "tool" ? item.costCredits ?? 0 : 0), 0));
+      }
 
       const latest = body.canvas?.at(-1);
 
@@ -190,6 +200,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   const selected = canvas.find((item) => item.generationId === selectedId) ?? null;
   const hasMessages = messages.length > 0;
   const current = canvas[Math.min(viewIndex, canvas.length - 1)] ?? canvas[canvas.length - 1];
+  const displayCredits = balance ?? Math.max(0, credits - spent);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[430px_1fr] lg:h-[calc(100vh-25rem)] lg:min-h-[1040px]">
@@ -290,7 +301,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
             <h2 className="mt-1.5 text-3xl font-light text-black">画布</h2>
           </div>
           <p className="text-sm text-black/52">
-            {canvas.length} 张作品 · 点击图片选中后，在左侧说怎么改（剩余积分：{Math.max(0, credits - spent)}）
+            {canvas.length} 张作品 · 点击图片选中后，在左侧说怎么改（剩余积分：{displayCredits}）
           </p>
         </div>
 
@@ -309,7 +320,13 @@ export function AgentWorkbench({ credits }: { credits: number }) {
             onView={setViewIndex}
             selectedId={selectedId}
             onSelect={() => setSelectedId(current.generationId)}
-            onVariant={() => void send("给这张图生成两个不同配色的变体")}
+            onVariant={(generationId) => {
+              // Always act on the image being viewed, even if the selection
+              // state still points elsewhere (e.g. auto-selection of the
+              // previous result).
+              setSelectedId(generationId);
+              void send("给这张图生成两个不同配色的变体", { selectedGenerationId: generationId });
+            }}
             current={current}
           />
         )}
@@ -407,7 +424,7 @@ function CanvasCarousel({
   onView: (index: number) => void;
   selectedId: string | null;
   onSelect: () => void;
-  onVariant: () => void;
+  onVariant: (generationId: string) => void;
   current: CanvasItem;
 }) {
   const selected = current.generationId === selectedId;
@@ -508,7 +525,7 @@ function CanvasCarousel({
           >
             选中编辑
           </button>
-          <button type="button" onClick={onVariant} className="rounded-full border border-black/12 bg-white px-3.5 py-1.5 text-xs text-black/66 transition hover:border-black/35 hover:text-black">
+          <button type="button" onClick={() => onVariant(current.generationId)} className="rounded-full border border-black/12 bg-white px-3.5 py-1.5 text-xs text-black/66 transition hover:border-black/35 hover:text-black">
             变体
           </button>
           <a

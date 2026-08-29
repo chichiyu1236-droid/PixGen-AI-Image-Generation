@@ -5,6 +5,7 @@ import { createBrain } from "@/lib/agent/brain";
 import { runAgentTurn } from "@/lib/agent/loop";
 import { listCanvasItems, type ToolContext } from "@/lib/agent/tools";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
+import { getProfileCredits } from "@/lib/auth/profile";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { BrainTurnMessage } from "@/lib/agent/types";
@@ -93,13 +94,22 @@ export async function POST(request: Request, context: MessagesRouteContext) {
     lastBuiltPrompt: null,
   };
 
-  const turn = await runAgentTurn({
-    brain,
-    userText: parsed.data.text,
-    history,
-    context: { canvas, selectedGenerationId: parsed.data.selectedGenerationId },
-    ctx,
-  });
+  let turn: Awaited<ReturnType<typeof runAgentTurn>>;
+
+  try {
+    turn = await runAgentTurn({
+      brain,
+      userText: parsed.data.text,
+      history,
+      context: { canvas, selectedGenerationId: parsed.data.selectedGenerationId },
+      ctx,
+    });
+  } catch (error) {
+    // The user message is already stored; fail the turn without poisoning the
+    // transcript - the user can simply retry.
+    console.error(error);
+    return NextResponse.json({ error: "agent_turn_failed" }, { status: 502 });
+  }
 
   const { data: assistantMessage, error: insertAssistantError } = await admin
     .from("agent_messages")
@@ -131,10 +141,12 @@ export async function POST(request: Request, context: MessagesRouteContext) {
   }
 
   const nextCanvas = await listCanvasItems(admin, id);
+  const remainingCredits = await getProfileCredits(admin, user.id).catch(() => null);
 
   return NextResponse.json({
     userMessage: { id: userMessageId, role: "user", content: parsed.data.text, trace: [], created_at: new Date().toISOString() },
     assistantMessage,
     canvas: nextCanvas,
+    remainingCredits,
   });
 }
