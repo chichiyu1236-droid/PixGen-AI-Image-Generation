@@ -100,7 +100,7 @@ describe("POST /api/checkout", () => {
     const body = await response.json();
 
     expect(response.status).toBe(404);
-    expect(body.error).toBe("unknown_pack");
+    expect(body.error).toBe("unknown_sku");
     expect(state.insertCalls).toHaveLength(0);
   });
 
@@ -178,5 +178,63 @@ describe("POST /api/checkout", () => {
 
     const failedUpdate = state.updateCalls.find((call) => (call.values as Record<string, unknown>).status === "failed");
     expect(failedUpdate).toBeDefined();
+  });
+  it("creates a membership order with the frozen plan snapshot", async () => {
+    const response = await postCheckout({ planId: "std-year", channel: "wechat" });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.reused).toBe(false);
+
+    const inserted = state.insertCalls[0] as Record<string, unknown>;
+    expect(inserted.pack_id).toBe("std-year");
+    expect(inserted.kind).toBe("plan");
+    expect(inserted.credits).toBe(100);
+    expect(inserted.amount_fen).toBe(19900);
+    expect(inserted.plan_snapshot).toEqual({
+      planId: "std-year",
+      quotaPerTranche: 100,
+      tranches: 12,
+      periodDays: 365,
+    });
+    expect(providerMocks.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amountFen: 19900, channel: "wechat" }),
+    );
+  });
+
+  it("ignores client-side plan numbers and snapshot payloads", async () => {
+    const response = await postCheckout({
+      planId: "std-month",
+      channel: "wechat",
+      amountFen: 1,
+      credits: 999999,
+      planSnapshot: { quotaPerTranche: 99999, tranches: 99 },
+    });
+
+    expect(response.status).toBe(200);
+
+    const inserted = state.insertCalls[0] as Record<string, unknown>;
+    expect(inserted.amount_fen).toBe(1990);
+    expect(inserted.credits).toBe(100);
+    expect(inserted.plan_snapshot).toEqual({
+      planId: "std-month",
+      quotaPerTranche: 100,
+      tranches: 1,
+      periodDays: 30,
+    });
+  });
+
+  it("rejects a request carrying both packId and planId", async () => {
+    const response = await postCheckout({ packId: "starter-20", planId: "std-month", channel: "wechat" });
+
+    expect(response.status).toBe(400);
+    expect(state.insertCalls).toHaveLength(0);
+  });
+
+  it("rejects a request carrying neither packId nor planId", async () => {
+    const response = await postCheckout({ channel: "wechat" });
+
+    expect(response.status).toBe(400);
+    expect(state.insertCalls).toHaveLength(0);
   });
 });

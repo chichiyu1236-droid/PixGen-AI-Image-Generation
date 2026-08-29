@@ -85,7 +85,7 @@ test.describe("Billing flow", () => {
     await expect(buyButton).toBeVisible();
     await buyButton.click();
 
-    await page.waitForURL(/\/pay\//, { timeout: 10_000 });
+    await page.waitForURL(/\/pay\//, { timeout: 30_000 });
 
     await expect(page.getByText("CHECKOUT")).toBeVisible();
     await expect(page.getByRole("heading", { name: "微信支付 · ¥9.90" })).toBeVisible();

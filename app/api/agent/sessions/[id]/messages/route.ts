@@ -5,7 +5,7 @@ import { createBrain } from "@/lib/agent/brain";
 import { runAgentTurn } from "@/lib/agent/loop";
 import { listCanvasItems, type ToolContext } from "@/lib/agent/tools";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
-import { getProfileCredits } from "@/lib/auth/profile";
+import { getCreditBalance } from "@/lib/auth/balance";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { BrainTurnMessage } from "@/lib/agent/types";
@@ -141,7 +141,14 @@ export async function POST(request: Request, context: MessagesRouteContext) {
   }
 
   const nextCanvas = await listCanvasItems(admin, id);
-  const remainingCredits = await getProfileCredits(admin, user.id).catch(() => null);
+  // Kept numeric (dual-pool total) to preserve the workbench contract.
+  let remainingCredits: number | null = null;
+
+  try {
+    remainingCredits = (await getCreditBalance(admin, user.id)).totalCredits;
+  } catch {
+    remainingCredits = null;
+  }
 
   return NextResponse.json({
     userMessage: { id: userMessageId, role: "user", content: parsed.data.text, trace: [], created_at: new Date().toISOString() },

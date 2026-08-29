@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 import { AgentWorkbench } from "@/components/agent-workbench";
 import { LogoutButton } from "@/components/auth-button";
 import { CreditBadge } from "@/components/credit-badge";
+import { MembershipNotice } from "@/components/membership-notice";
 import { GenerateModes } from "@/components/generate-modes";
 import { GenerationForm } from "@/components/generation-form";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
-import { getProfileCredits } from "@/lib/auth/profile";
+import { EMPTY_BALANCE, getCreditBalance } from "@/lib/auth/balance";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GenerateRequest } from "@/lib/validation/generate";
@@ -56,7 +58,9 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
   }
 
   await ensureUserProfile(user).catch(() => undefined);
-  const credits = await getProfileCredits(supabase, user.id).catch(() => 0);
+  // evaluate_membership is service-role-only (it writes), so pages must read
+  // the balance through the admin client, never the user-scoped one.
+  const balance = await getCreditBalance(createSupabaseAdminClient(), user.id).catch(() => EMPTY_BALANCE);
   const hasPrefill = Boolean(getSearchValue(resolvedSearchParams, "subject"));
   const { count } = await supabase
     .from("generations")
@@ -99,7 +103,7 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-black/58">两种方式，取决于你现在处于哪种状态：已经有想法，就从经典生成开始；还没有想法，就交给 Agent 聊出来。</p>
         </div>
         <nav className="flex flex-wrap items-center gap-3">
-          <CreditBadge credits={credits} />
+          <CreditBadge balance={balance} />
           <Link className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:border-black/25" href="/upgrade">
             购买积分
           </Link>
@@ -110,11 +114,13 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
         </nav>
       </header>
 
+      <MembershipNotice balance={balance} />
+
       <div className="mx-auto max-w-6xl">
         <GenerateModes
           initialMode={mode}
-          classicForm={<GenerationForm credits={credits} initialValues={getInitialValues(resolvedSearchParams, useExample)} initialReference={initialReference} />}
-          agentWorkbench={<AgentWorkbench credits={credits} />}
+          classicForm={<GenerationForm credits={balance.totalCredits} initialValues={getInitialValues(resolvedSearchParams, useExample)} initialReference={initialReference} />}
+          agentWorkbench={<AgentWorkbench credits={balance.totalCredits} />}
         />
       </div>
     </main>

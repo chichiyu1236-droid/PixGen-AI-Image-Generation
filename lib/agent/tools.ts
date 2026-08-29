@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { getProfileCredits } from "@/lib/auth/profile";
+import { getCreditBalance } from "@/lib/auth/balance";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
 import { buildImagePrompt } from "@/lib/prompts/builder";
@@ -119,15 +119,17 @@ async function runBuildPrompt(args: unknown, ctx: ToolContext): Promise<ToolResu
 
 /** Shared pre-flight for paid image tools: credits + provider health + bucket. */
 async function preflightPaidTool(ctx: ToolContext): Promise<ToolResult | null> {
-  let credits: number;
+  let totalCredits: number;
 
+  // evaluate_membership also settles pool expiry and due tranche grants.
   try {
-    credits = await getProfileCredits(ctx.admin, ctx.userId);
+    const balance = await getCreditBalance(ctx.admin, ctx.userId);
+    totalCredits = balance.totalCredits;
   } catch {
     return { ok: false, error: "profile_unavailable", retryable: true };
   }
 
-  if (credits < 1) {
+  if (totalCredits < 1) {
     return { ok: false, error: "insufficient_credits", retryable: false };
   }
 

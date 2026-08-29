@@ -3,7 +3,7 @@ import { POST } from "@/app/api/generate/route";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProfileCredits } from "@/lib/auth/profile";
+import { getCreditBalance, type CreditBalance } from "@/lib/auth/balance";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderHealth } from "@/lib/openai/provider-health";
 import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
@@ -16,8 +16,8 @@ vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/profile", () => ({
-  getProfileCredits: vi.fn(),
+vi.mock("@/lib/auth/balance", () => ({
+  getCreditBalance: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/ensure-profile", () => ({
@@ -53,6 +53,17 @@ const basePayload = {
 
 const HISTORY_GENERATION_ID = "5f0b1c2e-1111-4222-8333-444455556666";
 
+const balanceWith = (overrides: Partial<CreditBalance> = {}): CreditBalance => ({
+  permanentCredits: 5,
+  subCredits: 0,
+  subCreditsExpiresAt: null,
+  planId: null,
+  paidUntil: null,
+  membershipActive: false,
+  totalCredits: 5,
+  ...overrides,
+});
+
 function authenticatedContext() {
   vi.mocked(createSupabaseServerClient).mockResolvedValue({
     auth: {
@@ -81,7 +92,7 @@ describe("POST /api/generate", () => {
     } as never);
     vi.mocked(ensureUserProfile).mockResolvedValue(false);
     vi.mocked(createSupabaseAdminClient).mockReturnValue({ rpc } as never);
-    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(getCreditBalance).mockResolvedValue(balanceWith());
     vi.mocked(ensureGeneratedImagesBucket).mockResolvedValue(undefined);
     vi.mocked(getImageProviderHealth).mockReturnValue({
       ok: true,
@@ -119,7 +130,7 @@ describe("POST /api/generate", () => {
         })),
       },
     } as never);
-    vi.mocked(getProfileCredits).mockRejectedValue(new Error("Unable to load credits: missing"));
+    vi.mocked(getCreditBalance).mockRejectedValue(new Error("Unable to load credits: missing"));
 
     const request = new Request("http://localhost/api/generate", {
       method: "POST",
@@ -151,7 +162,7 @@ describe("POST /api/generate", () => {
       },
     } as never);
     vi.mocked(ensureUserProfile).mockResolvedValue(true);
-    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(getCreditBalance).mockResolvedValue(balanceWith());
     vi.mocked(getImageProviderHealth).mockReturnValue({
       ok: false,
       model: "gpt-image-2",
@@ -191,7 +202,7 @@ describe("POST /api/generate", () => {
       },
     } as never);
     vi.mocked(ensureUserProfile).mockResolvedValue(true);
-    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(getCreditBalance).mockResolvedValue(balanceWith());
     vi.mocked(ensureGeneratedImagesBucket).mockRejectedValue(new Error("Bucket not found"));
 
     const request = new Request("http://localhost/api/generate", {
@@ -225,7 +236,7 @@ describe("POST /api/generate", () => {
       },
     } as never);
     vi.mocked(ensureUserProfile).mockResolvedValue(true);
-    vi.mocked(getProfileCredits).mockResolvedValue(5);
+    vi.mocked(getCreditBalance).mockResolvedValue(balanceWith());
     vi.mocked(uploadGeneratedImage).mockRejectedValue(new Error("Upload failed"));
 
     const request = new Request("http://localhost/api/generate", {
@@ -348,6 +359,67 @@ describe("POST /api/generate", () => {
     expect(body.error).toBe("invalid_request");
     expect(generateImageBase64).not.toHaveBeenCalled();
     expect(editImageBase64).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it("allows generation when only the subscription pool holds credits and returns the dual-pool split", async () => {
+    authenticatedContext();
+    vi.mocked(getCreditBalance)
+      .mockResolvedValueOnce(
+        balanceWith({
+          permanentCredits: 0,
+          subCredits: 3,
+          subCreditsExpiresAt: "2026-09-30T00:00:00+00:00",
+          planId: "std-month",
+          paidUntil: "2026-09-30T00:00:00+00:00",
+          membershipActive: true,
+          totalCredits: 3,
+        }),
+      )
+      .mockResolvedValueOnce(
+        balanceWith({
+          permanentCredits: 0,
+          subCredits: 2,
+          subCreditsExpiresAt: "2026-09-30T00:00:00+00:00",
+          planId: "std-month",
+          paidUntil: "2026-09-30T00:00:00+00:00",
+          membershipActive: true,
+          totalCredits: 2,
+        }),
+      );
+
+    const request = new Request("http://localhost/api/generate", {
+      method: "POST",
+      body: JSON.stringify(basePayload),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.generation.id).toBe("gen-1");
+    expect(body.remainingCredits).toMatchObject({
+      permanentCredits: 0,
+      subCredits: 2,
+      subCreditsExpiresAt: "2026-09-30T00:00:00+00:00",
+      totalCredits: 2,
+    });
+  });
+
+  it("returns 402 before touching the provider when both pools are empty", async () => {
+    authenticatedContext();
+    vi.mocked(getCreditBalance).mockResolvedValue(balanceWith({ permanentCredits: 0, totalCredits: 0 }));
+
+    const request = new Request("http://localhost/api/generate", {
+      method: "POST",
+      body: JSON.stringify(basePayload),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(402);
+    expect(body.error).toBe("insufficient_credits");
+    expect(generateImageBase64).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
   });
 });

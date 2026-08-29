@@ -4,7 +4,8 @@ import { LogoutButton } from "@/components/auth-button";
 import { CreditBadge } from "@/components/credit-badge";
 import { HistoryGrid } from "@/components/history-grid";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
-import { getProfileCredits } from "@/lib/auth/profile";
+import { EMPTY_BALANCE, getCreditBalance } from "@/lib/auth/balance";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
 
@@ -21,7 +22,7 @@ export default async function HistoryPage() {
   }
 
   await ensureUserProfile(user).catch(() => undefined);
-  const credits = await getProfileCredits(supabase, user.id).catch(() => 0);
+  const balance = await getCreditBalance(createSupabaseAdminClient(), user.id).catch(() => EMPTY_BALANCE);
 
   const [{ data }, { count }] = await Promise.all([
     supabase
@@ -44,7 +45,7 @@ export default async function HistoryPage() {
           <p className="mt-2 max-w-2xl text-sm leading-6 text-black/58">这里会保存你生成过的图片、提示词和反馈，方便下载、复制和再次生成。</p>
         </div>
         <nav className="flex flex-wrap items-center gap-3">
-          <CreditBadge credits={credits} />
+          <CreditBadge balance={balance} />
           <Link className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:border-black/20" href="/generate">
             返回生成页
           </Link>

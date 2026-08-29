@@ -10,6 +10,8 @@ export type Database = {
           display_name: string | null;
           avatar_url: string | null;
           credits: number;
+          sub_credits: number;
+          sub_credits_expires_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -19,6 +21,8 @@ export type Database = {
           display_name?: string | null;
           avatar_url?: string | null;
           credits?: number;
+          sub_credits?: number;
+          sub_credits_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -28,6 +32,8 @@ export type Database = {
           display_name?: string | null;
           avatar_url?: string | null;
           credits?: number;
+          sub_credits?: number;
+          sub_credits_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -187,7 +193,7 @@ export type Database = {
           id: string;
           user_id: string;
           generation_id: string | null;
-          type: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment";
+          type: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment" | "membership_grant" | "membership_expire";
           amount: number;
           reason: string;
           created_at: string;
@@ -196,7 +202,7 @@ export type Database = {
           id?: string;
           user_id: string;
           generation_id?: string | null;
-          type: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment";
+          type: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment" | "membership_grant" | "membership_expire";
           amount: number;
           reason: string;
           created_at?: string;
@@ -205,7 +211,7 @@ export type Database = {
           id?: string;
           user_id?: string;
           generation_id?: string | null;
-          type?: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment";
+          type?: "signup_bonus" | "generation_charge" | "purchase" | "admin_adjustment" | "membership_grant" | "membership_expire";
           amount?: number;
           reason?: string;
           created_at?: string;
@@ -227,6 +233,44 @@ export type Database = {
           },
         ];
       };
+      memberships: {
+        Row: {
+          user_id: string;
+          plan_id: string;
+          paid_until: string;
+          next_grant_at: string;
+          pending_tranches: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          plan_id: string;
+          paid_until: string;
+          next_grant_at: string;
+          pending_tranches?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          plan_id?: string;
+          paid_until?: string;
+          next_grant_at?: string;
+          pending_tranches?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "memberships_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: true;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       orders: {
         Row: {
           id: string;
@@ -237,6 +281,8 @@ export type Database = {
           status: "pending" | "paid" | "expired" | "failed" | "flagged";
           channel: "wechat" | "alipay";
           provider: string;
+          kind: "pack" | "plan";
+          plan_snapshot: Json | null;
           provider_trade_no: string | null;
           pay_url: string | null;
           raw_notify: Json | null;
@@ -255,6 +301,8 @@ export type Database = {
           status?: "pending" | "paid" | "expired" | "failed" | "flagged";
           channel: "wechat" | "alipay";
           provider: string;
+          kind?: "pack" | "plan";
+          plan_snapshot?: Json | null;
           provider_trade_no?: string | null;
           pay_url?: string | null;
           raw_notify?: Json | null;
@@ -273,6 +321,8 @@ export type Database = {
           status?: "pending" | "paid" | "expired" | "failed" | "flagged";
           channel?: "wechat" | "alipay";
           provider?: string;
+          kind?: "pack" | "plan";
+          plan_snapshot?: Json | null;
           provider_trade_no?: string | null;
           pay_url?: string | null;
           raw_notify?: Json | null;
@@ -295,6 +345,12 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      evaluate_membership: {
+        Args: {
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       record_successful_generation: {
         Args: {
           p_user_id: string;

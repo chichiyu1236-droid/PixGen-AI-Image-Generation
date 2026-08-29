@@ -4,14 +4,20 @@ import { z } from "zod";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getBillingEnv } from "@/lib/billing/env";
 import { getCreditPack } from "@/lib/billing/packs";
+import { getMembershipPlan } from "@/lib/billing/plans";
 import { getBillingProvider, getWebhookUrl } from "@/lib/billing/provider";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-const checkoutRequestSchema = z.object({
-  packId: z.string().min(1),
-  channel: z.enum(["wechat", "alipay"]),
-});
+const checkoutRequestSchema = z
+  .object({
+    packId: z.string().min(1).optional(),
+    planId: z.string().min(1).optional(),
+    channel: z.enum(["wechat", "alipay"]),
+  })
+  .refine((value) => Boolean(value.packId) !== Boolean(value.planId), {
+    message: "exactly one of packId or planId is required",
+  });
 
 const REUSE_WINDOW_MS = 2 * 60 * 1000;
 const MAX_ACTIVE_PENDING_ORDERS = 3;
@@ -32,11 +38,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const pack = getCreditPack(parsed.data.packId);
+  const pack = parsed.data.packId ? getCreditPack(parsed.data.packId) : undefined;
+  const plan = parsed.data.planId ? getMembershipPlan(parsed.data.planId) : undefined;
 
-  if (!pack) {
-    return NextResponse.json({ error: "unknown_pack" }, { status: 404 });
+  if (!pack && !plan) {
+    return NextResponse.json({ error: "unknown_sku" }, { status: 404 });
   }
+
+  // Exactly one SKU kind is present by the request schema refine above.
+  const skuId = pack ? pack.id : plan!.id;
+  const amountFen = pack ? pack.amountFen : plan!.amountFen;
+  const credits = pack ? pack.credits : plan!.quotaPerTranche;
+  const bodyText = pack
+    ? `${pack.name}: ${pack.credits} 积分`
+    : `${plan!.name}: 每期 ${plan!.quotaPerTranche} 张`;
+  const planSnapshot = plan
+    ? {
+        planId: plan.id,
+        quotaPerTranche: plan.quotaPerTranche,
+        tranches: plan.tranches,
+        periodDays: plan.periodDays,
+      }
+    : undefined;
 
   const admin = createSupabaseAdminClient();
 
@@ -49,13 +72,13 @@ export async function POST(request: Request) {
   const now = new Date();
   const reuseCutoff = new Date(now.getTime() - REUSE_WINDOW_MS).toISOString();
 
-  // Reuse a fresh, still-payable order for the same pack and channel instead of
+  // Reuse a fresh, still-payable order for the same SKU and channel instead of
   // stacking duplicates on double clicks.
   const { data: reusable } = await admin
     .from("orders")
     .select("id")
     .eq("user_id", user.id)
-    .eq("pack_id", pack.id)
+    .eq("pack_id", skuId)
     .eq("channel", parsed.data.channel)
     .eq("status", "pending")
     .not("pay_url", "is", null)
@@ -87,12 +110,14 @@ export async function POST(request: Request) {
   const { error: insertError } = await admin.from("orders").insert({
     id: orderId,
     user_id: user.id,
-    pack_id: pack.id,
-    credits: pack.credits,
-    amount_fen: pack.amountFen,
+    pack_id: skuId,
+    credits,
+    amount_fen: amountFen,
     status: "pending",
     channel: parsed.data.channel,
     provider: provider.id,
+    kind: pack ? "pack" : "plan",
+    plan_snapshot: planSnapshot,
     expires_at: expiresAt,
   });
 
@@ -106,8 +131,8 @@ export async function POST(request: Request) {
   try {
     const payment = await provider.createPayment({
       orderId,
-      amountFen: pack.amountFen,
-      body: `${pack.name}: ${pack.credits} 积分`,
+      amountFen,
+      body: bodyText,
       channel: parsed.data.channel,
       notifyUrl: getWebhookUrl(provider.id),
       ttlMinutes: getBillingEnv().ORDER_TTL_MINUTES,
@@ -126,7 +151,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "order_create_failed" }, { status: 500 });
   }
 
-  console.log(`[billing] checkout order=${orderId} pack=${pack.id} channel=${parsed.data.channel} provider=${provider.id}`);
+  console.log(
+    `[billing] checkout order=${orderId} sku=${skuId} kind=${pack ? "pack" : "plan"} channel=${parsed.data.channel} provider=${provider.id}`,
+  );
 
   return NextResponse.json({ orderId, reused: false });
 }

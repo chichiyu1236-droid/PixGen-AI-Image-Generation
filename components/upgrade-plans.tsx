@@ -17,6 +17,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   too_many_pending_orders: "你有太多未完成的订单，请先完成或等待它们过期。",
   provider_unavailable: "支付通道暂时不可用，请稍后再试。",
   unknown_pack: "积分包不存在，请刷新页面重试。",
+  unknown_sku: "商品不存在，请刷新页面重试。",
   invalid_request: "请求参数有误，请刷新页面重试。",
 };
 

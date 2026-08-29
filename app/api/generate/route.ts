@@ -5,7 +5,7 @@ import { generateRequestSchema } from "@/lib/validation/generate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
-import { getProfileCredits } from "@/lib/auth/profile";
+import { getCreditBalance, type CreditBalance } from "@/lib/auth/balance";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
 import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
@@ -27,16 +27,16 @@ export async function POST(request: Request) {
   }
 
   const admin = createSupabaseAdminClient();
-  let credits: number;
+  let balance: CreditBalance;
 
   try {
     await ensureUserProfile(user);
-    credits = await getProfileCredits(admin, user.id);
+    balance = await getCreditBalance(admin, user.id);
   } catch {
     return NextResponse.json({ error: "profile_unavailable" }, { status: 500 });
   }
 
-  if (credits < 1) {
+  if (balance.totalCredits < 1) {
     return NextResponse.json({ error: "insufficient_credits" }, { status: 402 });
   }
 
@@ -124,7 +124,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "generation_record_failed" }, { status: 500 });
   }
 
-  const remainingCredits = await getProfileCredits(admin, user.id).catch(() => null);
+  // Dual-pool split for the badge: expired/forfeited pool state is already
+  // settled inside the RPC.
+  const remainingCredits = await getCreditBalance(admin, user.id).catch(() => null);
 
   return NextResponse.json({ generation, remainingCredits });
 }
