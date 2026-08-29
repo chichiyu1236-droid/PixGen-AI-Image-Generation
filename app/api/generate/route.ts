@@ -7,8 +7,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getProfileCredits } from "@/lib/auth/profile";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
-import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderUnavailable } from "@/lib/openai/provider-health";
-import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
+import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
+import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const providerErrorReason = getImageProviderErrorReason(error);
 
     if (providerErrorReason) {
-      markImageProviderUnavailable(providerErrorReason);
+      markImageProviderFailure(providerErrorReason);
       console.error(error);
       return NextResponse.json({ error: "provider_unavailable" }, { status: 503 });
     }
@@ -111,8 +111,20 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    console.error(error);
+
+    // The image was uploaded but the charge failed (e.g. a concurrent request
+    // spent the last credit) - remove the orphaned object and report honestly.
+    await admin.storage.from(GENERATED_IMAGES_BUCKET).remove([uploaded.storagePath]).catch(() => undefined);
+
+    if (error.message.includes("insufficient_credits")) {
+      return NextResponse.json({ error: "insufficient_credits" }, { status: 402 });
+    }
+
     return NextResponse.json({ error: "generation_record_failed" }, { status: 500 });
   }
 
-  return NextResponse.json({ generation });
+  const remainingCredits = await getProfileCredits(admin, user.id).catch(() => null);
+
+  return NextResponse.json({ generation, remainingCredits });
 }

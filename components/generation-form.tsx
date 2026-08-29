@@ -437,6 +437,7 @@ function getErrorMessage(error: string) {
     profile_unavailable: "积分读取失败，请刷新页面后重试。",
     generation_record_failed: "结果保存失败，请稍后重试。",
     not_authenticated: "请登录后再生成图片。",
+    insufficient_credits: "积分余额不足，请购买积分后再试。",
   };
 
   return messages[error] ?? "生成失败，请稍后重试。";
