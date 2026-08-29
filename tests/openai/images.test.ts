@@ -48,6 +48,8 @@ describe("generateImageBase64", () => {
     expect(openaiMocks.OpenAI).toHaveBeenCalledWith({
       apiKey: "relay-key",
       baseURL: "https://relay.example.com/v1",
+      maxRetries: 1,
+      timeout: 90_000,
     });
     expect(openaiMocks.generate).toHaveBeenCalledWith(
       expect.objectContaining({

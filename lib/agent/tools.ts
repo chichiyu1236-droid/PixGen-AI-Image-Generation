@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { getProfileCredits } from "@/lib/auth/profile";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
-import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderUnavailable } from "@/lib/openai/provider-health";
+import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
 import { buildImagePrompt } from "@/lib/prompts/builder";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
 import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
@@ -150,7 +150,7 @@ function providerFailure(error: unknown): ToolResult {
   const reason = getImageProviderErrorReason(error);
 
   if (reason) {
-    markImageProviderUnavailable(reason);
+    markImageProviderFailure(reason);
     return { ok: false, error: "provider_unavailable", retryable: true };
   }
 

@@ -22,7 +22,9 @@ class RealBrain implements AgentBrain {
 
   constructor() {
     const env = getAgentEnv();
-    this.client = new OpenAI({ apiKey: env.AGENT_LLM_API_KEY, baseURL: env.AGENT_LLM_BASE_URL });
+    // The relay's LLM latency is erratic (measured >100s for a trivial turn);
+    // cap it so an agent turn always ends with a response to the user.
+    this.client = new OpenAI({ apiKey: env.AGENT_LLM_API_KEY, baseURL: env.AGENT_LLM_BASE_URL, timeout: 120_000, maxRetries: 1 });
     this.model = env.AGENT_LLM_MODEL;
   }
 

@@ -3,9 +3,13 @@ import "server-only";
 import { getServerEnv } from "@/lib/env";
 
 const UNAVAILABLE_TTL_MS = 5 * 60 * 1000;
+// The relay intermittently returns a single 503 while still serving most
+// requests; only trip the breaker on consecutive failures, not the first blip.
+const FAILURE_THRESHOLD = 2;
 
 let unavailableUntil = 0;
 let unavailableReason: string | null = null;
+let consecutiveFailures = 0;
 
 export function getImageProviderHealth() {
   const now = Date.now();
@@ -28,9 +32,18 @@ export function getImageProviderHealth() {
   };
 }
 
-export function markImageProviderUnavailable(reason: string, ttlMs = UNAVAILABLE_TTL_MS) {
-  unavailableUntil = Date.now() + ttlMs;
-  unavailableReason = reason;
+export function markImageProviderHealthy() {
+  consecutiveFailures = 0;
+}
+
+/** Records a provider-side failure; the breaker opens on consecutive failures. */
+export function markImageProviderFailure(reason: string, ttlMs = UNAVAILABLE_TTL_MS) {
+  consecutiveFailures += 1;
+
+  if (consecutiveFailures >= FAILURE_THRESHOLD) {
+    unavailableUntil = Date.now() + ttlMs;
+    unavailableReason = reason;
+  }
 }
 
 export function getImageProviderErrorReason(error: unknown) {

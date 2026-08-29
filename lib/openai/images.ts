@@ -3,6 +3,10 @@ import "server-only";
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { getServerEnv, resolveImageProvider } from "@/lib/env";
+import { markImageProviderHealthy } from "@/lib/openai/provider-health";
+
+/** The relay can hang for minutes before Cloudflare kills it; fail faster. */
+const IMAGE_REQUEST_TIMEOUT_MS = 90_000;
 
 /** 1x1 transparent PNG used by the mock image provider (dev/test only). */
 const MOCK_IMAGE_BASE64 =
@@ -12,7 +16,12 @@ function imageClient() {
   const env = getServerEnv();
 
   return {
-    client: new OpenAI({ apiKey: env.OPENAI_API_KEY, baseURL: env.OPENAI_BASE_URL }),
+    client: new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+      baseURL: env.OPENAI_BASE_URL,
+      timeout: IMAGE_REQUEST_TIMEOUT_MS,
+      maxRetries: 1,
+    }),
     model: env.OPENAI_IMAGE_MODEL,
   };
 }
@@ -37,6 +46,8 @@ export async function generateImageBase64(input: { prompt: string; size: string 
   if (!image) {
     throw new Error("OpenAI did not return an image.");
   }
+
+  markImageProviderHealthy();
 
   return image;
 }
@@ -64,6 +75,8 @@ export async function editImageBase64(input: { prompt: string; images: string[];
   if (!image) {
     throw new Error("OpenAI did not return an edited image.");
   }
+
+  markImageProviderHealthy();
 
   return image;
 }

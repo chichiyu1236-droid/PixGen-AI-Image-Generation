@@ -15,7 +15,8 @@ vi.mock("@/lib/openai/images", () => ({
 vi.mock("@/lib/openai/provider-health", () => ({
   getImageProviderHealth: vi.fn(),
   getImageProviderErrorReason: vi.fn(() => null),
-  markImageProviderUnavailable: vi.fn(),
+  markImageProviderFailure: vi.fn(),
+  markImageProviderHealthy: vi.fn(),
 }));
 vi.mock("@/lib/storage/images", () => ({
   GENERATED_IMAGES_BUCKET: "generated-images",
