@@ -11,3 +11,6 @@ tsconfig.tsbuildinfo
 .env*
 .zcode/
 supabase/.temp/
+
+# Local worktrees
+.worktrees/
