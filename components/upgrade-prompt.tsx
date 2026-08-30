@@ -5,9 +5,9 @@ export function UpgradePrompt() {
     <div className="rounded-[1.5rem] border border-black/10 bg-white p-5 shadow-[0_18px_50px_rgba(0,0,0,0.04)]">
       <p className="font-display text-2xl tracking-[0.08em] text-black/40">CREDIT</p>
       <h2 className="mt-3 text-2xl font-light text-black">积分不足</h2>
-      <p className="mt-3 text-sm leading-6 text-black/60">当前没有可用积分。可以购买积分包，支付成功后立即到账。</p>
+      <p className="mt-3 text-sm leading-6 text-black/60">当前没有可用积分。开通会员卡即可获得每期生成额度，支付成功后立即到账。</p>
       <Link className="mt-5 inline-flex rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-black/90" href="/upgrade">
-        购买积分
+        查看会员方案
       </Link>
     </div>
   );

@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runAgentTool, type ToolContext } from "@/lib/agent/tools";
-import { getCreditBalance, type CreditBalance } from "@/lib/auth/balance";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderHealth } from "@/lib/openai/provider-health";
 import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 import type { Database } from "@/types/database";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-vi.mock("@/lib/auth/balance", () => ({ getCreditBalance: vi.fn() }));
 vi.mock("@/lib/openai/images", () => ({
   generateImageBase64: vi.fn(),
   editImageBase64: vi.fn(),
@@ -25,17 +23,6 @@ vi.mock("@/lib/storage/images", () => ({
 }));
 
 const GEN_1 = "11111111-1111-1111-1111-111111111111";
-
-const balanceWith = (overrides: Partial<CreditBalance> = {}): CreditBalance => ({
-  permanentCredits: 5,
-  subCredits: 0,
-  subCreditsExpiresAt: null,
-  planId: null,
-  paidUntil: null,
-  membershipActive: false,
-  totalCredits: 5,
-  ...overrides,
-});
 
 const generationRow = {
   id: "22222222-2222-2222-2222-222222222222",
@@ -76,18 +63,19 @@ function fakeAdmin(options: { canvasRows?: unknown[]; sourceRow?: unknown | null
   } as unknown as SupabaseClient<Database>;
 }
 
-function context(admin: SupabaseClient<Database>): ToolContext {
+function context(admin: SupabaseClient<Database>, overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     userId: "user-1",
     sessionId: "session-1",
     admin,
+    totalCredits: 5,
     lastBuiltPrompt: null,
+    ...overrides,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getCreditBalance).mockResolvedValue(balanceWith());
   vi.mocked(ensureGeneratedImagesBucket).mockResolvedValue(undefined);
   vi.mocked(getImageProviderHealth).mockReturnValue({ ok: true, model: "gpt-image-1", reason: null, retryAfterSeconds: 0 });
   vi.mocked(generateImageBase64).mockResolvedValue("base64-new");
@@ -149,9 +137,8 @@ describe("generate_image", () => {
   });
 
   it("blocks generation when credits run out", async () => {
-    vi.mocked(getCreditBalance).mockResolvedValue(balanceWith({ permanentCredits: 0, totalCredits: 0 }));
     const admin = fakeAdmin({});
-    const ctx = context(admin);
+    const ctx = context(admin, { totalCredits: 0 });
 
     await runAgentTool("build_prompt", {
       imageType: "ecommerce_hero", aspectRatio: "square", style: "premium_minimal",

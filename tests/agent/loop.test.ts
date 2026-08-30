@@ -47,6 +47,7 @@ function turnInput(brain: AgentBrain) {
       userId: "user-1",
       sessionId: "session-1",
       admin: {} as SupabaseClient<Database>,
+      totalCredits: 5,
       lastBuiltPrompt: null,
     } satisfies ToolContext,
   };

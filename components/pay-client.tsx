@@ -14,6 +14,7 @@ export type PayOrderView = {
   amountFen: number;
   credits: number;
   packId: string;
+  kind: "pack" | "plan";
   expiresAt: string;
   createdAt: string;
 };
@@ -140,10 +141,16 @@ export function PayClient({ order }: { order: PayOrderView }) {
     setError(null);
 
     try {
+      // Credit packs are delisted; only membership orders can be re-ordered.
+      if (order.kind !== "plan") {
+        setError("积分包已下架，请前往定价页选购会员卡。");
+        return;
+      }
+
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId: order.packId, channel: order.channel }),
+        body: JSON.stringify({ planId: order.packId, channel: order.channel }),
       });
       const body = (await response.json()) as { orderId?: string; error?: string };
 

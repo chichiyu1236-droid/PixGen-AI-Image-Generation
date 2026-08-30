@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fenToYuanString, formatFenAsCny, yuanStringToFen } from "@/lib/billing/money";
-import { getCreditPack } from "@/lib/billing/packs";
+import { membershipPlans } from "@/lib/billing/plans";
 import { buildMockCallbackParams, mockProvider } from "@/lib/billing/providers/mock";
 import { signParams } from "@/lib/billing/providers/signature";
 
@@ -26,15 +26,11 @@ describe("money", () => {
   });
 });
 
-describe("credit packs", () => {
-  it("exposes the starter pack with server-side pricing", () => {
-    const pack = getCreditPack("starter-20");
-
-    expect(pack).toMatchObject({ credits: 20, amountFen: 990 });
-  });
-
-  it("returns undefined for unknown packs", () => {
-    expect(getCreditPack("does-not-exist")).toBeUndefined();
+describe("membership plans", () => {
+  it("exposes membership plans with server-side pricing", () => {
+    expect(membershipPlans).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "std-month", quotaPerTranche: 100, amountFen: 1990 })]),
+    );
   });
 });
 

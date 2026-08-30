@@ -7,6 +7,10 @@ export default defineConfig({
     globals: true,
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },
+  esbuild: {
+    // Components use the Next.js automatic JSX runtime; mirror it in tests.
+    jsx: "automatic",
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),

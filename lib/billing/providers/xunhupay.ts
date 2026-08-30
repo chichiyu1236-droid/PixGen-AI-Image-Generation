@@ -146,7 +146,7 @@ export function buildXunhupayCallbackParams(input: { orderId: string; amountFen:
     total_fee: fenToYuanString(input.amountFen),
     transaction_id: `xhpay-${input.orderId}`,
     open_order_id: `xh-open-${input.orderId}`,
-    order_title: "积分包购买",
+    order_title: "积分充值",
     status: "OD",
     appid: xunhupayConfig().appId,
     time: String(Math.floor(Date.now() / 1000)),

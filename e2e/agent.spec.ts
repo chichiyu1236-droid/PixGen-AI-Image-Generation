@@ -32,6 +32,24 @@ test.describe("Agent workbench", () => {
     const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
     if (error) throw error;
     userId = data.user.id;
+
+    // Agent mode is members-only: activate a std-month membership with the
+    // first tranche granted, mirroring a paying member.
+    const now = new Date();
+    await admin.from("memberships").upsert({
+      user_id: userId,
+      plan_id: "std-month",
+      paid_until: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      next_grant_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      pending_tranches: [],
+    });
+    await admin
+      .from("profiles")
+      .update({
+        sub_credits: 100,
+        sub_credits_expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", userId);
   });
 
   test.afterAll(async () => {
@@ -70,7 +88,7 @@ test.describe("Agent workbench", () => {
     await send.click();
     await expect(page.getByText("生成好了（消耗 1 积分）")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByAltText("画布作品 图 1 · v1")).toBeVisible();
-    await expect(page.getByText("剩余积分：4")).toBeVisible();
+    await expect(page.getByText("剩余积分：104")).toBeVisible();
 
     // 3) The fresh image is auto-selected; edit it (4 -> 3 credits).
     await expect(page.getByText("编辑对象")).toBeVisible();
@@ -79,13 +97,13 @@ test.describe("Agent workbench", () => {
     await expect(page.getByText("改好了，新版本已经放上画布")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByAltText("画布作品 图 2 · v2")).toBeVisible();
     await expect(page.getByText("基于 图 1 · v1 修改")).toBeVisible();
-    await expect(page.getByText("剩余积分：3")).toBeVisible();
+    await expect(page.getByText("剩余积分：103")).toBeVisible();
 
     // 4) Variants: two more edits billed separately (3 -> 1 credits).
     await input.fill("给这张图生成两个不同配色的变体");
     await send.click();
     await expect(page.getByText("两个配色变体已经放上画布")).toBeVisible({ timeout: 40_000 });
-    await expect(page.getByText("剩余积分：1")).toBeVisible();
+    await expect(page.getByText("剩余积分：101")).toBeVisible();
     await expect(page.getByText("4 / 4")).toBeVisible();
     await page.getByRole("button", { name: "上一张" }).click();
     await expect(page.getByAltText("画布作品 图 3 · v3")).toBeVisible();

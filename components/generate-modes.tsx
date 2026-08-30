@@ -1,19 +1,23 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { Lock, Sparkles, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 export function GenerateModes({
   initialMode,
+  membershipActive,
   classicForm,
   agentWorkbench,
 }: {
   initialMode: "classic" | "agent";
+  membershipActive: boolean;
   classicForm: ReactNode;
   agentWorkbench: ReactNode;
 }) {
   const [mode, setMode] = useState<"classic" | "agent">(initialMode);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
     // Keep the mode shareable/refreshable without remounting either pane.
@@ -35,17 +39,20 @@ export function GenerateModes({
         />
         <ModeCard
           active={mode === "agent"}
-          onClick={() => setMode("agent")}
+          onClick={() => (membershipActive ? setMode("agent") : setShowUpgrade(true))}
           eyebrow="AGENT"
           title="Agent 对话"
           description="哪怕只有一句模糊的感觉也可以。Agent 帮你澄清想法、写好提示词，生成后还能继续对话修改。"
           who="还没想好，聊聊看"
           highlight
+          locked={!membershipActive}
         />
       </div>
 
       <div className={mode === "classic" ? "" : "hidden"}>{classicForm}</div>
       <div className={mode === "agent" ? "" : "hidden"}>{agentWorkbench}</div>
+
+      {showUpgrade ? <AgentUpgradeDialog onClose={() => setShowUpgrade(false)} /> : null}
     </div>
   );
 }
@@ -58,6 +65,7 @@ function ModeCard({
   description,
   who,
   highlight,
+  locked,
 }: {
   active: boolean;
   onClick: () => void;
@@ -66,6 +74,7 @@ function ModeCard({
   description: string;
   who: string;
   highlight?: boolean;
+  locked?: boolean;
 }) {
   return (
     <button
@@ -78,7 +87,11 @@ function ModeCard({
           : "border-black/10 bg-white/60 hover:border-black/25"
       }`}
     >
-      {highlight ? (
+      {locked ? (
+        <span className="absolute right-5 top-4 inline-flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-black/55">
+          <Lock size={11} aria-hidden /> 会员专属
+        </span>
+      ) : highlight ? (
         <span className="absolute right-5 top-4 rounded-full bg-[#47624c] px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-white">
           NEW
         </span>
@@ -102,5 +115,30 @@ export function AgentModeHint() {
     <p className="flex items-center gap-2 text-sm text-black/52">
       <Sparkles size={16} aria-hidden /> Agent 模式由对话驱动，消耗积分与经典模式一致
     </p>
+  );
+}
+
+function AgentUpgradeDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-6" role="dialog" aria-modal="true" aria-label="升级会员">
+      <div className="w-full max-w-md rounded-[2rem] border border-black/10 bg-white p-8 text-center shadow-[0_24px_70px_rgba(0,0,0,0.12)]">
+        <div className="flex justify-end">
+          <button type="button" onClick={onClose} aria-label="关闭" className="rounded-full p-1 text-black/40 hover:text-black">
+            <X size={18} aria-hidden />
+          </button>
+        </div>
+        <p className="font-display text-2xl tracking-[0.12em] text-black/40">MEMBER</p>
+        <h3 className="mt-2 text-2xl font-light text-black">Agent 对话是会员专属</h3>
+        <p className="mt-3 text-sm leading-6 text-black/60">
+          开通标准或 Pro 会员卡即可使用 Agent 对话工作台：聊聊想法就能出图，还能继续对话改图。
+        </p>
+        <Link
+          href="/upgrade"
+          className="mt-6 inline-flex rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-black/90"
+        >
+          查看会员方案
+        </Link>
+      </div>
+    </div>
   );
 }

@@ -136,7 +136,7 @@ describe("xunhupay provider verifyCallback", () => {
       total_fee: fenToYuanString(990),
       transaction_id: "xh-tx-1",
       open_order_id: "xh-open-1",
-      order_title: "积分包购买",
+      order_title: "积分充值",
       status: "OD",
       appid: APP_ID,
       time: "1700000000",

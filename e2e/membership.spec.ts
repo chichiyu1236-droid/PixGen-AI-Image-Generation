@@ -106,7 +106,7 @@ test.describe("Membership flow", () => {
     test.slow();
     await signIn(page);
     await page.goto("/upgrade");
-    await expect(page.getByText("购买积分")).toBeVisible();
+    await expect(page.getByText("免费体验")).toBeVisible();
     await expect(page.getByText("¥19.90").first()).toBeVisible();
 
     await page.getByRole("button", { name: "立即开通" }).first().click();

@@ -59,7 +59,7 @@ test.describe("Billing flow", () => {
     }
   });
 
-  test("checkout -> cashier page -> mock payment -> success", async ({ page }) => {
+  test("membership checkout -> cashier page -> mock payment -> success", async ({ page }) => {
     // Cold Next.js compiles plus remote-Supabase latency exceed the default 30s.
     test.slow();
     const anon = createClient(supabaseUrl, supabaseAnonKey);
@@ -77,20 +77,24 @@ test.describe("Billing flow", () => {
     ]);
 
     await page.goto("/upgrade");
-    await expect(page.getByText("购买积分")).toBeVisible();
-    await expect(page.getByText("尝鲜包")).toBeVisible();
-    await expect(page.getByText("¥9.90")).toBeVisible();
+    await expect(page.getByText("免费体验")).toBeVisible();
+    await expect(page.getByText("标准月卡")).toBeVisible();
+    await expect(page.getByText("¥19.90")).toBeVisible();
 
-    const buyButton = page.getByRole("button", { name: "立即购买" });
+    // Credit packs are delisted: no add-on section may appear.
+    await expect(page.getByText("尝鲜包")).toHaveCount(0);
+    await expect(page.getByText("加购")).toHaveCount(0);
+
+    const buyButton = page.getByRole("button", { name: "立即开通" }).first();
     await expect(buyButton).toBeVisible();
     await buyButton.click();
 
     await page.waitForURL(/\/pay\//, { timeout: 30_000 });
 
     await expect(page.getByText("CHECKOUT")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "微信支付 · ¥9.90" })).toBeVisible();
-    await expect(page.getByText("¥9.90")).toBeVisible();
-    await expect(page.getByText("20 积分")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "微信支付 · ¥19.90" })).toBeVisible();
+    await expect(page.getByText("¥19.90")).toBeVisible();
+    await expect(page.getByText("100 积分")).toBeVisible();
     await expect(page.getByText("订单有效期剩余")).toBeVisible();
 
     // The cashier renders a QR code on desktop and a pay-jump link on mobile.
@@ -118,23 +122,23 @@ test.describe("Billing flow", () => {
     expect(ack).toBe("success");
 
     await expect(page.getByText("支付成功")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("20 积分已到账")).toBeVisible();
+    await expect(page.getByText("100 积分已到账")).toBeVisible();
 
-    const { data: profile } = await admin.from("profiles").select("credits").eq("id", userId).single();
-    expect(profile!.credits).toBeGreaterThanOrEqual(20);
+    const { data: profile } = await admin.from("profiles").select("credits, sub_credits").eq("id", userId).single();
+    expect(profile!.sub_credits).toBeGreaterThanOrEqual(100);
 
     const { data: events } = await admin
       .from("credit_events")
       .select("type")
       .eq("user_id", userId)
-      .eq("type", "purchase");
+      .eq("type", "membership_grant");
     expect(events!.length).toBeGreaterThanOrEqual(1);
   });
 
   test("cashier page shows 404 for other user's order", async ({ page }) => {
     test.slow();
     const { data: { user: otherUser } } = await admin.auth.admin.createUser({
-      email: `e2e-other-${stamp}@example.com`,
+      email: `e2e-other-${stamp}-${Math.floor(Math.random() * 1e6)}@example.com`,
       password: `E2e!Other${stamp}`,
       email_confirm: true,
     });

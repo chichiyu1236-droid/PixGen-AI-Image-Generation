@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { AGENT_MEMBERSHIP_REQUIRED, requireAgentMembership } from "@/lib/agent/membership-gate";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -20,6 +21,14 @@ export async function POST() {
   }
 
   const admin = createSupabaseAdminClient();
+
+  // Agent mode is members-only; enforce before any session state is created.
+  const gate = await requireAgentMembership(admin, user.id);
+
+  if (!gate.allowed) {
+    return NextResponse.json({ error: AGENT_MEMBERSHIP_REQUIRED }, { status: 403 });
+  }
+
   const { data: session, error } = await admin
     .from("agent_sessions")
     .insert({ user_id: user.id })

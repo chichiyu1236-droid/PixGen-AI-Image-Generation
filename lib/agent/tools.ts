@@ -3,7 +3,6 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { getCreditBalance } from "@/lib/auth/balance";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
 import { buildImagePrompt } from "@/lib/prompts/builder";
@@ -16,6 +15,8 @@ export type ToolContext = {
   userId: string;
   sessionId: string;
   admin: SupabaseClient<Database>;
+  /** Dual-pool total evaluated once by the membership gate for this message. */
+  totalCredits: number;
   /** Prompt produced by build_prompt in the current run, consumed by generate_image. */
   lastBuiltPrompt: { prompt: string; options: z.infer<typeof generateRequestSchema> } | null;
 };
@@ -119,17 +120,9 @@ async function runBuildPrompt(args: unknown, ctx: ToolContext): Promise<ToolResu
 
 /** Shared pre-flight for paid image tools: credits + provider health + bucket. */
 async function preflightPaidTool(ctx: ToolContext): Promise<ToolResult | null> {
-  let totalCredits: number;
-
-  // evaluate_membership also settles pool expiry and due tranche grants.
-  try {
-    const balance = await getCreditBalance(ctx.admin, ctx.userId);
-    totalCredits = balance.totalCredits;
-  } catch {
-    return { ok: false, error: "profile_unavailable", retryable: true };
-  }
-
-  if (totalCredits < 1) {
+  // The balance was evaluated once per message by the membership gate; the
+  // generation RPC remains the authoritative per-image balance enforcement.
+  if (ctx.totalCredits < 1) {
     return { ok: false, error: "insufficient_credits", retryable: false };
   }
 

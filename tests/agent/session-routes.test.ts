@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as listSessions, POST as createSession } from "@/app/api/agent/sessions/route";
+import { GET as getSession } from "@/app/api/agent/sessions/[id]/route";
 import { POST as postMessage } from "@/app/api/agent/sessions/[id]/messages/route";
 import { createBrain } from "@/lib/agent/brain";
 import { createMockBrain } from "@/lib/agent/brains/mock";
@@ -42,13 +43,37 @@ function serverClient(options: { user?: { id: string } | null; session?: object 
         };
       }
 
+      if (table === "agent_messages") {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: async () => ({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+
       throw new Error(`unexpected table ${table}`);
     }),
   };
 }
 
-function adminClient() {
+function adminClient(options: { membershipActive?: boolean } = {}) {
   return {
+    rpc: vi.fn(async () => ({
+      data: [
+        {
+          permanentCredits: 0,
+          subCredits: 100,
+          subCreditsExpiresAt: null,
+          planId: "std-month",
+          paidUntil: "2099-01-01T00:00:00.000Z",
+          membershipActive: options.membershipActive ?? true,
+          totalCredits: 100,
+        },
+      ],
+      error: null,
+    })),
     from: vi.fn((table: string) => {
       if (table === "agent_messages") {
         return {
@@ -123,6 +148,17 @@ describe("POST /api/agent/sessions", () => {
 
     expect(response.status).toBe(200);
     expect(body.session.id).toBe(SESSION_ID);
+  });
+
+  it("rejects non-members with agent_membership_required", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({}) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(adminClient({ membershipActive: false }) as never);
+
+    const response = await createSession();
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBe("agent_membership_required");
   });
 });
 
@@ -253,5 +289,41 @@ describe("POST /api/agent/sessions/[id]/messages", () => {
       ]),
     );
     expect(body.assistantMessage.content).toContain("失败");
+  });
+
+  it("rejects non-member message requests with agent_membership_required", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(adminClient({ membershipActive: false }) as never);
+
+    const response = await postMessage(request({ text: "做一张海报" }), {
+      params: Promise.resolve({ id: SESSION_ID }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBe("agent_membership_required");
+    expect(runAgentTool).not.toHaveBeenCalled();
+  });
+
+  it("keeps expired-member sessions readable but blocks new turns", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      serverClient({ session: { id: SESSION_ID, title: "海报" } }) as never,
+    );
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(adminClient({ membershipActive: false }) as never);
+
+    const readResponse = await getSession(new Request(`http://localhost/api/agent/sessions/${SESSION_ID}`), {
+      params: Promise.resolve({ id: SESSION_ID }),
+    });
+
+    expect(readResponse.status).toBe(200);
+
+    const writeResponse = await postMessage(request({ text: "再改一版" }), {
+      params: Promise.resolve({ id: SESSION_ID }),
+    });
+    const body = await writeResponse.json();
+
+    expect(writeResponse.status).toBe(403);
+    expect(body.error).toBe("agent_membership_required");
+    expect(runAgentTool).not.toHaveBeenCalled();
   });
 });

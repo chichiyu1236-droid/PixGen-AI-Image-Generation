@@ -42,6 +42,7 @@ export default async function PayPage({ params }: PayPageProps) {
           amountFen: order.amount_fen,
           credits: order.credits,
           packId: order.pack_id,
+          kind: order.kind,
           expiresAt: order.expires_at,
           createdAt: order.created_at,
         }}

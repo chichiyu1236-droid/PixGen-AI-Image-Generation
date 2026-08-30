@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getBillingEnv } from "@/lib/billing/env";
-import { getCreditPack } from "@/lib/billing/packs";
 import { getMembershipPlan } from "@/lib/billing/plans";
 import { getBillingProvider, getWebhookUrl } from "@/lib/billing/provider";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -38,28 +37,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const pack = parsed.data.packId ? getCreditPack(parsed.data.packId) : undefined;
-  const plan = parsed.data.planId ? getMembershipPlan(parsed.data.planId) : undefined;
-
-  if (!pack && !plan) {
+  // Credit packs are delisted: membership cards are the only purchasable SKU,
+  // so any packId-bearing request is answered with a clean "no such product".
+  if (parsed.data.packId) {
     return NextResponse.json({ error: "unknown_sku" }, { status: 404 });
   }
 
-  // Exactly one SKU kind is present by the request schema refine above.
-  const skuId = pack ? pack.id : plan!.id;
-  const amountFen = pack ? pack.amountFen : plan!.amountFen;
-  const credits = pack ? pack.credits : plan!.quotaPerTranche;
-  const bodyText = pack
-    ? `${pack.name}: ${pack.credits} 积分`
-    : `${plan!.name}: 每期 ${plan!.quotaPerTranche} 张`;
-  const planSnapshot = plan
-    ? {
-        planId: plan.id,
-        quotaPerTranche: plan.quotaPerTranche,
-        tranches: plan.tranches,
-        periodDays: plan.periodDays,
-      }
-    : undefined;
+  const plan = parsed.data.planId ? getMembershipPlan(parsed.data.planId) : undefined;
+
+  if (!plan) {
+    return NextResponse.json({ error: "unknown_sku" }, { status: 404 });
+  }
+
+  const skuId = plan.id;
+  const amountFen = plan.amountFen;
+  const credits = plan.quotaPerTranche;
+  const bodyText = `${plan.name}: 每期 ${plan.quotaPerTranche} 张`;
+  const planSnapshot = {
+    planId: plan.id,
+    quotaPerTranche: plan.quotaPerTranche,
+    tranches: plan.tranches,
+    periodDays: plan.periodDays,
+  };
 
   const admin = createSupabaseAdminClient();
 
@@ -116,7 +115,7 @@ export async function POST(request: Request) {
     status: "pending",
     channel: parsed.data.channel,
     provider: provider.id,
-    kind: pack ? "pack" : "plan",
+    kind: "plan",
     plan_snapshot: planSnapshot,
     expires_at: expiresAt,
   });
@@ -152,7 +151,7 @@ export async function POST(request: Request) {
   }
 
   console.log(
-    `[billing] checkout order=${orderId} sku=${skuId} kind=${pack ? "pack" : "plan"} channel=${parsed.data.channel} provider=${provider.id}`,
+    `[billing] checkout order=${orderId} sku=${skuId} kind=plan channel=${parsed.data.channel} provider=${provider.id}`,
   );
 
   return NextResponse.json({ orderId, reused: false });

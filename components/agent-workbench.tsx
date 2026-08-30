@@ -1,6 +1,7 @@
 "use client";
 
-import { Download, Loader2, RefreshCw, Send } from "lucide-react";
+import { Download, Loader2, Lock, RefreshCw, Send } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type TraceItem = {
@@ -46,7 +47,7 @@ const WELCOME_HINTS = [
   "做一张高端护肤品的电商海报，极简风格",
 ];
 
-export function AgentWorkbench({ credits }: { credits: number }) {
+export function AgentWorkbench({ credits, membershipActive }: { credits: number; membershipActive: boolean }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [canvas, setCanvas] = useState<CanvasItem[]>([]);
@@ -59,6 +60,9 @@ export function AgentWorkbench({ credits }: { credits: number }) {
   // page-load snapshot minus locally observed spend before that.
   const [balance, setBalance] = useState<number | null>(null);
   const [viewIndex, setViewIndex] = useState(0);
+  // Flips on when the server answers agent_membership_required (e.g. the
+  // membership expired while the page was open); read-only fallback follows.
+  const [membershipRequired, setMembershipRequired] = useState(!membershipActive);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Panel heights are fixed like classic mode; follow new content inside.
@@ -105,6 +109,11 @@ export function AgentWorkbench({ credits }: { credits: number }) {
 
     if (!trimmed || busy) return;
 
+    if (membershipRequired) {
+      setMembershipRequired(true);
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setInput("");
@@ -125,6 +134,10 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         const createdBody = (await created.json()) as { session?: { id: string }; error?: string };
 
         if (!created.ok || !createdBody.session) {
+          if (createdBody.error === "agent_membership_required") {
+            setMembershipRequired(true);
+            return;
+          }
           throw new Error(createdBody.error ?? "session_create_failed");
         }
 
@@ -147,6 +160,10 @@ export function AgentWorkbench({ credits }: { credits: number }) {
       };
 
       if (!response.ok || !body.assistantMessage) {
+        if (body.error === "agent_membership_required") {
+          setMembershipRequired(true);
+          return;
+        }
         throw new Error(body.error ?? "message_failed");
       }
 
@@ -243,6 +260,19 @@ export function AgentWorkbench({ credits }: { credits: number }) {
         </div>
 
         <div className="mt-4 border-t border-black/10 pt-4">
+          {membershipRequired ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-black/10 bg-[#f8faf7] px-4 py-3 text-sm text-black/70">
+              <Lock size={15} aria-hidden />
+              <span>Agent 对话为会员专属{messages.length > 0 ? "，会员已过期：历史对话与画布仍可查看" : ""}。</span>
+              <Link
+                href="/upgrade"
+                className="ml-auto inline-flex rounded-full bg-black px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-black/90"
+              >
+                查看会员方案
+              </Link>
+            </div>
+          ) : (
+          <>
           {selected ? (
             <div className="mb-2.5 flex items-center gap-2 rounded-[1rem] border border-[#47624c]/25 bg-[#eef4ee] px-3 py-2 text-xs text-black/60">
               ✎ 正在编辑 <b className="text-[#47624c]">{selected.version}</b> 的基础上继续修改
@@ -277,7 +307,7 @@ export function AgentWorkbench({ credits }: { credits: number }) {
             </button>
           </div>
 
-          {!hasMessages ? (
+          {!hasMessages && !membershipRequired ? (
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {WELCOME_HINTS.map((hint) => (
                 <button
@@ -291,6 +321,8 @@ export function AgentWorkbench({ credits }: { credits: number }) {
               ))}
             </div>
           ) : null}
+          </>
+          )}
         </div>
       </section>
 

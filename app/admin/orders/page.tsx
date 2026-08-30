@@ -117,7 +117,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                 <tr>
                   <th className="border-b border-ink/10 py-2">下单时间</th>
                   <th className="border-b border-ink/10 py-2">用户</th>
-                  <th className="border-b border-ink/10 py-2">积分包</th>
+                  <th className="border-b border-ink/10 py-2">商品</th>
                   <th className="border-b border-ink/10 py-2">金额</th>
                   <th className="border-b border-ink/10 py-2">通道</th>
                   <th className="border-b border-ink/10 py-2">状态</th>

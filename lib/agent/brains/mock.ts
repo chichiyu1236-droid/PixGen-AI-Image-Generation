@@ -23,7 +23,7 @@ class MockBrain implements AgentBrain {
       this.queue = [];
 
       if (failure.error === "insufficient_credits") {
-        return { kind: "text", text: "积分余额不足，无法继续。可以到「购买积分」充值后回来继续，我们接着改。" };
+        return { kind: "text", text: "积分余额不足，无法继续。可以到「会员方案」开通会员卡后回来继续，我们接着改。" };
       }
 
       return { kind: "text", text: `刚才的工具调用失败了（${failure.error}），本次没有扣积分。可以稍后再试一次。` };

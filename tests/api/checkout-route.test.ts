@@ -90,13 +90,23 @@ describe("POST /api/checkout", () => {
   it("rejects unauthenticated requests", async () => {
     state.user = null;
 
-    const response = await postCheckout({ packId: "starter-20", channel: "wechat" });
+    const response = await postCheckout({ planId: "std-month", channel: "wechat" });
 
     expect(response.status).toBe(401);
   });
 
-  it("rejects unknown packs with server-side pricing only", async () => {
-    const response = await postCheckout({ packId: "mega-9999", channel: "wechat" });
+  it("rejects delisted credit packs with unknown_sku", async () => {
+    const response = await postCheckout({ packId: "starter-20", channel: "wechat" });
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("unknown_sku");
+    expect(state.insertCalls).toHaveLength(0);
+    expect(providerMocks.createPayment).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown plans with server-side pricing only", async () => {
+    const response = await postCheckout({ planId: "mega-9999", channel: "wechat" });
     const body = await response.json();
 
     expect(response.status).toBe(404);
@@ -105,15 +115,15 @@ describe("POST /api/checkout", () => {
   });
 
   it("rejects invalid channels", async () => {
-    const response = await postCheckout({ packId: "starter-20", channel: "paypal" });
+    const response = await postCheckout({ planId: "std-month", channel: "paypal" });
 
     expect(response.status).toBe(400);
   });
 
-  it("reuses a fresh pending order for the same pack instead of inserting", async () => {
+  it("reuses a fresh pending order for the same plan instead of inserting", async () => {
     state.reusableOrder = { id: "existing-order" };
 
-    const response = await postCheckout({ packId: "starter-20", channel: "wechat" });
+    const response = await postCheckout({ planId: "std-month", channel: "wechat" });
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -125,7 +135,7 @@ describe("POST /api/checkout", () => {
   it("refuses to create when three active pending orders exist", async () => {
     state.activePendingCount = 3;
 
-    const response = await postCheckout({ packId: "starter-20", channel: "wechat" });
+    const response = await postCheckout({ planId: "std-month", channel: "wechat" });
     const body = await response.json();
 
     expect(response.status).toBe(409);
@@ -133,8 +143,8 @@ describe("POST /api/checkout", () => {
     expect(state.insertCalls).toHaveLength(0);
   });
 
-  it("creates an order with the server-side price snapshot and stores the pay url", async () => {
-    const response = await postCheckout({ packId: "starter-20", channel: "alipay" });
+  it("creates a membership order with the server-side price snapshot and stores the pay url", async () => {
+    const response = await postCheckout({ planId: "std-month", channel: "alipay" });
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -142,16 +152,23 @@ describe("POST /api/checkout", () => {
     expect(body.orderId).toMatch(/^[0-9a-f-]{36}$/);
 
     const inserted = state.insertCalls[0] as Record<string, unknown>;
-    expect(inserted.pack_id).toBe("starter-20");
-    expect(inserted.credits).toBe(20);
-    expect(inserted.amount_fen).toBe(990);
+    expect(inserted.pack_id).toBe("std-month");
+    expect(inserted.kind).toBe("plan");
+    expect(inserted.credits).toBe(100);
+    expect(inserted.amount_fen).toBe(1990);
     expect(inserted.status).toBe("pending");
     expect(inserted.channel).toBe("alipay");
     expect(inserted.provider).toBe("mock");
+    expect(inserted.plan_snapshot).toEqual({
+      planId: "std-month",
+      quotaPerTranche: 100,
+      tranches: 1,
+      periodDays: 30,
+    });
     expect(new Date(String(inserted.expires_at)).getTime()).toBeGreaterThan(Date.now());
 
     expect(providerMocks.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amountFen: 990, channel: "alipay", notifyUrl: "http://localhost:3000/api/webhooks/mock" }),
+      expect.objectContaining({ amountFen: 1990, channel: "alipay", notifyUrl: "http://localhost:3000/api/webhooks/mock" }),
     );
 
     const payUrlUpdate = state.updateCalls.find((call) => (call.values as Record<string, unknown>).pay_url);
@@ -159,18 +176,30 @@ describe("POST /api/checkout", () => {
   });
 
   it("client-side price fields never influence the order", async () => {
-    const response = await postCheckout({ packId: "starter-20", channel: "wechat", amountFen: 1, credits: 999999 });
+    const response = await postCheckout({
+      planId: "std-month",
+      channel: "wechat",
+      amountFen: 1,
+      credits: 999999,
+      planSnapshot: { quotaPerTranche: 99999, tranches: 99 },
+    });
 
     expect(response.status).toBe(200);
     const inserted = state.insertCalls[0] as Record<string, unknown>;
-    expect(inserted.amount_fen).toBe(990);
-    expect(inserted.credits).toBe(20);
+    expect(inserted.amount_fen).toBe(1990);
+    expect(inserted.credits).toBe(100);
+    expect(inserted.plan_snapshot).toEqual({
+      planId: "std-month",
+      quotaPerTranche: 100,
+      tranches: 1,
+      periodDays: 30,
+    });
   });
 
   it("marks the order failed and reports 502 when the provider rejects the request", async () => {
     providerMocks.createPayment.mockRejectedValueOnce(new Error("lantu_create_order_failed"));
 
-    const response = await postCheckout({ packId: "starter-20", channel: "wechat" });
+    const response = await postCheckout({ planId: "std-month", channel: "wechat" });
     const body = await response.json();
 
     expect(response.status).toBe(502);
@@ -179,7 +208,8 @@ describe("POST /api/checkout", () => {
     const failedUpdate = state.updateCalls.find((call) => (call.values as Record<string, unknown>).status === "failed");
     expect(failedUpdate).toBeDefined();
   });
-  it("creates a membership order with the frozen plan snapshot", async () => {
+
+  it("creates a yearly membership order with the frozen plan snapshot", async () => {
     const response = await postCheckout({ planId: "std-year", channel: "wechat" });
     const body = await response.json();
 
@@ -200,28 +230,6 @@ describe("POST /api/checkout", () => {
     expect(providerMocks.createPayment).toHaveBeenCalledWith(
       expect.objectContaining({ amountFen: 19900, channel: "wechat" }),
     );
-  });
-
-  it("ignores client-side plan numbers and snapshot payloads", async () => {
-    const response = await postCheckout({
-      planId: "std-month",
-      channel: "wechat",
-      amountFen: 1,
-      credits: 999999,
-      planSnapshot: { quotaPerTranche: 99999, tranches: 99 },
-    });
-
-    expect(response.status).toBe(200);
-
-    const inserted = state.insertCalls[0] as Record<string, unknown>;
-    expect(inserted.amount_fen).toBe(1990);
-    expect(inserted.credits).toBe(100);
-    expect(inserted.plan_snapshot).toEqual({
-      planId: "std-month",
-      quotaPerTranche: 100,
-      tranches: 1,
-      periodDays: 30,
-    });
   });
 
   it("rejects a request carrying both packId and planId", async () => {

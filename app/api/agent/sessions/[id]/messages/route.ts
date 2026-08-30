@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createBrain } from "@/lib/agent/brain";
+import { AGENT_MEMBERSHIP_REQUIRED, requireAgentMembership } from "@/lib/agent/membership-gate";
 import { runAgentTurn } from "@/lib/agent/loop";
 import { listCanvasItems, type ToolContext } from "@/lib/agent/tools";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
@@ -50,6 +51,16 @@ export async function POST(request: Request, context: MessagesRouteContext) {
   }
 
   const admin = createSupabaseAdminClient();
+
+  // Agent mode is members-only; enforce before any message or tool work.
+  // Gate placement follows the ownership 404 above so probing foreign
+  // sessions still reports "not found" regardless of membership.
+  const gate = await requireAgentMembership(admin, user.id);
+
+  if (!gate.allowed) {
+    return NextResponse.json({ error: AGENT_MEMBERSHIP_REQUIRED }, { status: 403 });
+  }
+
   const userMessageId = randomUUID();
   const { error: insertUserError } = await admin.from("agent_messages").insert({
     id: userMessageId,
@@ -91,6 +102,9 @@ export async function POST(request: Request, context: MessagesRouteContext) {
     userId: user.id,
     sessionId: id,
     admin,
+    // Evaluated once by the membership gate; the generation RPC stays the
+    // authoritative per-image balance enforcement.
+    totalCredits: gate.balance.totalCredits,
     lastBuiltPrompt: null,
   };
 

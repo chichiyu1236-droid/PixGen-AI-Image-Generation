@@ -130,7 +130,7 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
           <p className="font-display text-xl tracking-[0.1em] text-black/40">FREE</p>
           <h2 className="mt-2 text-2xl font-bold">免费体验</h2>
           <p className="mt-3 text-4xl font-bold">¥0</p>
-          <p className="mt-3 text-sm leading-6 text-black/60">注册即送 5 张体验积分（一次性），一张图一分。</p>
+          <p className="mt-3 text-sm leading-6 text-black/60">5 张试用积分 · 经典模式。</p>
           <button
             type="button"
             disabled
@@ -139,9 +139,9 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
             当前方案
           </button>
           <ul className="mt-6 space-y-2 text-sm leading-6 text-black/60">
-            <li>✓ 5 张一次性体验积分，不刷新</li>
-            <li>✓ 经典 / Agent / 参考图全部模式</li>
-            <li>✓ 可随时加购积分包</li>
+            <li>✓ 5 张一次性试用积分，不刷新</li>
+            <li>✓ 经典生成模式</li>
+            <li>✗ Agent 对话（会员专属）</li>
           </ul>
         </div>
 
@@ -189,6 +189,7 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
               </button>
               <ul className="mt-6 space-y-2 text-sm leading-6 text-black/60">
                 <li>✓ 每期 {plan.quotaPerTranche} 张生成额度</li>
+                <li>✓ Agent 对话工作台（会员专属）</li>
                 <li>✓ {billing === "yearly" ? `年卡共 ${plan.tranches} 期，按 30 天逐期发放` : "会员期 30 天"}</li>
                 <li>✓ 订阅积分优先消耗，永久积分兜底</li>
                 <li>✓ 有效期内续费/升级随时顺延</li>
