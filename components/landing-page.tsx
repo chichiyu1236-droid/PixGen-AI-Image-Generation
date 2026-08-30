@@ -96,12 +96,12 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             <a className="transition hover:text-black" href="#records">
               记录
             </a>
-            <a className="transition hover:text-black" href="#pricing">
-              价格
-            </a>
             <Link className="transition hover:text-black" href="/history">
               历史
             </Link>
+            <a className="transition hover:text-black" href="#pricing">
+              价格
+            </a>
           </div>
           {isAuthenticated ? (
             <Link className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/90" href="/generate">
