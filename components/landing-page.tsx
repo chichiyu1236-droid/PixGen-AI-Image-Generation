@@ -3,8 +3,10 @@
 import { ArrowRight, Check, ChevronRight, History, Layers3, Send, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { GoogleLoginButton } from "@/components/auth-button";
+import { formatFenAsCny } from "@/lib/billing/money";
+import { membershipPlans, YEARLY_DISCOUNT_PERCENT } from "@/lib/billing/plans";
 
 const features = [
   {
@@ -35,6 +37,11 @@ const dataPoints = [
   { value: "1", unit: "积分", label: "每张图的消耗", detail: "只有图片成功生成后才会扣除" },
   { value: "5", unit: "个", label: "新用户积分", detail: "第一次登录即可开始体验" },
   { value: "3", unit: "个", label: "常用动作", detail: "下载、反馈、重新生成" },
+] as const;
+
+const pricingTiers = [
+  { quota: 100, label: "标准", title: "标准会员", popular: false },
+  { quota: 300, label: "Pro", title: "Pro 会员", popular: true },
 ] as const;
 
 export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
@@ -80,9 +87,6 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             PromptCraft
           </Link>
           <div className="hidden items-center gap-6 text-sm text-black/60 md:flex">
-            <a className="transition hover:text-black" href="#flow">
-              创作
-            </a>
             <a className="transition hover:text-black" href="#features">
               功能
             </a>
@@ -91,6 +95,9 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             </a>
             <a className="transition hover:text-black" href="#records">
               记录
+            </a>
+            <a className="transition hover:text-black" href="#pricing">
+              价格
             </a>
             <Link className="transition hover:text-black" href="/history">
               历史
@@ -140,23 +147,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
         </div>
       </section>
 
-      <section id="flow" className="relative z-10 px-6 pt-28 lg:px-10">
-        <div className="mx-auto max-w-6xl">
-          <div data-reveal className="reveal">
-            <p className="font-display text-2xl tracking-[0.12em] text-black/42">创作流程</p>
-            <h2 className="mt-4 text-balance text-[clamp(3rem,7vw,5.6rem)] font-normal leading-[0.96] tracking-[0.01em] text-black">
-              少一点试错，多一点确定感。
-            </h2>
-            <p className="mt-5 text-lg leading-8 text-black/62">每一步都是选择题，不是作文题。</p>
-          </div>
-
-          <div data-reveal className="reveal mt-14 lg:mt-20">
-            <FeatureFlow />
-          </div>
-        </div>
-      </section>
-
-      <section id="features" className="relative z-10 px-6 pb-28 pt-16 lg:px-10">
+      <section id="features" className="relative z-10 px-6 pb-28 pt-28 lg:px-10">
         <div className="mx-auto max-w-6xl">
           <div className="mt-16 space-y-10 lg:mt-20">
             {features.map((feature, index) => (
@@ -224,7 +215,10 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
           </div>
           <dl>
             {dataPoints.map((item) => (
-              <div key={item.label} className="grid grid-cols-[auto_1fr] items-baseline gap-x-6 border-t border-black/10 py-5 lg:py-6">
+              <div
+                key={item.label}
+                className="grid grid-cols-[5.25rem_1fr] items-baseline gap-x-6 border-t border-black/10 py-5 pl-4 lg:py-6 lg:pl-10"
+              >
                 <dt className="flex items-baseline gap-1.5 whitespace-nowrap">
                   <span className="font-display text-[2.75rem] leading-none text-black">{item.value}</span>
                   <span className="text-sm font-semibold text-black/60">{item.unit}</span>
@@ -236,6 +230,29 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
               </div>
             ))}
           </dl>
+        </div>
+      </section>
+
+      <section id="pricing" className="relative z-10 px-6 py-28 lg:px-10">
+        <div data-reveal className="reveal mx-auto max-w-6xl">
+          <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <p className="font-display text-2xl tracking-[0.14em] text-black/40">定价</p>
+              <h2 className="mt-4 max-w-3xl text-balance text-4xl font-light leading-tight md:text-6xl">一张图一分，先免费用起。</h2>
+              <p className="mt-6 max-w-md text-pretty text-base leading-7 text-black/58">
+                免费层含 5 张试用积分；会员卡每期发放生成额度，含 Agent 对话工作台。
+              </p>
+            </div>
+            <Link
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-black underline-offset-4 transition hover:underline"
+              href="/upgrade"
+            >
+              查看完整定价
+              <ArrowRight size={15} aria-hidden />
+            </Link>
+          </div>
+
+          <PricingCards isAuthenticated={isAuthenticated} />
         </div>
       </section>
 
@@ -288,155 +305,6 @@ function HeroGallery() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function FeatureFlow() {
-  // ?v=2 busts the image-optimizer cache: replacing a public file under the
-  // same name is otherwise served stale from .next/cache/images in dev.
-  const styles = [
-    { key: "minimal", label: "极简白底", thumb: "/images/flow-style-minimal.png?v=2", result: "/images/flow-result.png?v=2" },
-    { key: "bright", label: "明亮生活", thumb: "/images/flow-style-bright.png?v=2", result: "/images/flow-result-bright.png?v=2" },
-    { key: "moody", label: "沉稳质感", thumb: "/images/flow-style-moody.png?v=2", result: "/images/flow-result-moody.png?v=2" },
-  ];
-
-  const [styleKey, setStyleKey] = useState("minimal");
-  const [generating, setGenerating] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
-
-  // Switching styles replays a short "generating" beat, then the finished
-  // image for that style fades in crisp — the flow demos itself.
-  function choose(nextKey: string) {
-    if (nextKey === styleKey || generating) return;
-
-    setStyleKey(nextKey);
-    setHasInteracted(true);
-    setGenerating(true);
-    window.setTimeout(() => setGenerating(false), 900);
-  }
-
-  return (
-    <div className="grid items-start gap-8 lg:grid-cols-[1.2fr_3.5rem_1fr_3.5rem_0.72fr] lg:gap-5 xl:gap-6">
-      <div className="flow-node" style={{ transitionDelay: "350ms" }}>
-          <p className="font-mono text-[11px] tracking-[0.22em] text-black/40">01 · 方向</p>
-          <p className="mt-1.5 text-[15px] font-semibold text-black">选一种画面质感</p>
-          <div className="mt-4 grid grid-cols-3 gap-2.5">
-            {styles.map((style) => {
-              const selected = style.key === styleKey;
-
-              return (
-                <button
-                  key={style.key}
-                  type="button"
-                  onClick={() => choose(style.key)}
-                  aria-pressed={selected}
-                  aria-label={`${style.label}风格`}
-                  className={`flow-swap relative overflow-hidden rounded-[0.9rem] border ${selected ? "border-black/55" : "border-black/10 hover:border-black/35"}`}
-                >
-                  <Image
-                    className={`flow-swap aspect-square w-full object-cover ${selected ? "opacity-100 grayscale-0" : "opacity-60 grayscale hover:opacity-80"}`}
-                    src={style.thumb}
-                    alt={`${style.label}风格示例`}
-                    width={256}
-                    height={256}
-                  />
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/45 to-transparent px-2 pb-1.5 pt-5 text-[10px] font-semibold text-white">
-                    {style.label}
-                  </span>
-                  <span
-                    className={`flow-swap absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black text-white ${selected ? "scale-100 opacity-100" : "scale-50 opacity-0"}`}
-                  >
-                    <Check size={11} strokeWidth={3} aria-hidden />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-3.5 flex flex-wrap items-center gap-1.5 text-[11px] text-black/50">
-            案例
-            {["小红书封面", "1:1"].map((chip) => (
-              <span key={chip} className="rounded-full border border-black/10 bg-[#f8faf7] px-2 py-0.5 text-black/60">
-                {chip}
-              </span>
-            ))}
-            <span className="text-black/38">点一点左侧缩略图试试</span>
-          </p>
-        </div>
-
-        <FlowSign sign="+" />
-
-        <div className="flow-node" style={{ transitionDelay: "670ms" }}>
-          <p className="font-mono text-[11px] tracking-[0.22em] text-black/40">02 · 主体</p>
-          <p className="mt-1.5 text-[15px] font-semibold text-black">一句话说清画面</p>
-          <div className="mt-4 rounded-[1rem] border border-black/10 bg-[#f8faf7] p-4">
-            <p className="text-[11px] font-semibold text-black/45">主体描述</p>
-            <p className="mt-2 flex min-h-6 items-center text-sm leading-6 text-black">
-              <span className="flow-type">一只奶白陶瓶，手工拉坯质感</span>
-              <span className="flow-caret ml-0.5 inline-block h-4 w-[2px] shrink-0 bg-black" aria-hidden />
-            </p>
-            <p className="mt-3 text-[11px] leading-5 text-black/45">参考图和补充说明，也可以一并带上</p>
-          </div>
-        </div>
-
-        <FlowSign sign="=" />
-
-        <div className="flow-node" style={{ transitionDelay: "990ms" }}>
-          <p className="font-mono text-[11px] tracking-[0.22em] text-black/40">03 · 成品</p>
-          <p className="mt-1.5 text-[15px] font-semibold text-black">直接能用的图</p>
-          <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-[1rem] border border-black/10 bg-[#f8faf7]">
-            {styles.map((style) => (
-              <Image
-                key={style.key}
-                className={`flow-swap absolute inset-0 h-full w-full object-cover ${style.key === styleKey ? "opacity-100" : "opacity-0"} ${
-                  generating && style.key === styleKey ? "scale-105 blur-md" : "scale-100 blur-0"
-                }`}
-                src={style.result}
-                alt={`${style.label}风格成品`}
-                width={480}
-                height={480}
-              />
-            ))}
-            <span
-              className="flow-shimmer absolute inset-0 bg-[linear-gradient(105deg,transparent_35%,rgba(255,255,255,0.55)_50%,transparent_65%)]"
-              aria-hidden
-            />
-            {generating ? (
-              <>
-                <span key={styleKey} className="flow-shimmer-replay absolute inset-0 bg-[linear-gradient(105deg,transparent_35%,rgba(255,255,255,0.55)_50%,transparent_65%)]" aria-hidden />
-                <span className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-semibold text-black shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
-                  正在生成…
-                </span>
-              </>
-            ) : hasInteracted ? (
-              <span
-                key={styleKey}
-                className="flow-done-replay absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-semibold text-black shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
-              >
-                <Check size={11} strokeWidth={3} aria-hidden /> 已生成 · −1 积分
-              </span>
-            ) : (
-              <span className="flow-done absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-semibold text-black shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
-                <Check size={11} strokeWidth={3} aria-hidden /> 已生成 · −1 积分
-              </span>
-            )}
-          </div>
-          <div className="mt-3 flex gap-1.5 text-[11px] text-black/60">
-            {["下载", "再来一版"].map((action) => (
-              <span key={action} className="rounded-full border border-black/10 bg-white px-2.5 py-1">
-                {action}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-  );
-}
-
-function FlowSign({ sign }: { sign: "+" | "=" }) {
-  return (
-    <div aria-hidden className="flex justify-center py-2 font-display text-xl leading-none text-black/30 lg:w-14 lg:py-0 lg:pt-14 lg:text-[1.75rem]">
-      {sign}
     </div>
   );
 }
@@ -566,6 +434,87 @@ function FeaturePanel({ type }: { type: string }) {
         <Check size={16} />
         历史页会保存你的每一次成功生成
       </div>
+    </div>
+  );
+}
+
+function planForTier(quota: number, periodDays: number) {
+  return membershipPlans.find((plan) => plan.quotaPerTranche === quota && plan.periodDays === periodDays);
+}
+
+function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
+  const freeCtaClass =
+    "inline-flex w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:border-black/25";
+  const paidCtaClass =
+    "inline-flex w-full items-center justify-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/90";
+
+  return (
+    <div className="mt-12 grid gap-5 lg:grid-cols-3">
+      <div className="flex flex-col rounded-[1.5rem] border border-black/10 bg-white p-7 shadow-[0_18px_50px_rgba(0,0,0,0.05)]">
+        <p className="font-display text-xl tracking-[0.1em] text-black/40">FREE</p>
+        <h3 className="mt-2 text-2xl font-bold">免费体验</h3>
+        <p className="mt-4 text-4xl font-bold">¥0</p>
+        <p className="mt-2 text-sm text-black/45">5 张试用积分 · 经典模式</p>
+        <div className="mt-7">
+          {isAuthenticated ? (
+            <Link className={freeCtaClass} href="/generate">
+              开始生成
+            </Link>
+          ) : (
+            <GoogleLoginButton className={freeCtaClass} />
+          )}
+        </div>
+        <ul className="mt-7 space-y-2.5 text-sm leading-6 text-black/60">
+          <li>✓ 5 张一次性试用积分，不刷新</li>
+          <li>✓ 经典生成模式</li>
+          <li>✗ Agent 对话（会员专属）</li>
+        </ul>
+      </div>
+
+      {pricingTiers.map((tier) => {
+        const monthly = planForTier(tier.quota, 30);
+        const yearly = planForTier(tier.quota, 365);
+
+        if (!monthly || !yearly) {
+          return null;
+        }
+
+        return (
+          <div
+            key={tier.quota}
+            className={`relative flex flex-col rounded-[1.5rem] border bg-white p-7 shadow-[0_18px_50px_rgba(0,0,0,0.05)] ${
+              tier.popular ? "border-black/70" : "border-black/10"
+            }`}
+          >
+            {tier.popular ? (
+              <span className="absolute -top-3 left-6 rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">Most popular</span>
+            ) : null}
+            <p className="font-display text-xl tracking-[0.1em] text-black/40">{tier.label.toUpperCase()}</p>
+            <h3 className="mt-2 text-2xl font-bold">{tier.title}</h3>
+            <p className="mt-4 text-4xl font-bold">
+              {formatFenAsCny(monthly.amountFen)}
+              <span className="ml-1 text-base font-medium text-black/45">/月</span>
+            </p>
+            <p className="mt-2 text-sm text-black/45">
+              年付 {formatFenAsCny(yearly.amountFen)}/年，省 {YEARLY_DISCOUNT_PERCENT}%
+            </p>
+            <div className="mt-7">
+              {isAuthenticated ? (
+                <Link className={paidCtaClass} href="/upgrade">
+                  立即开通
+                </Link>
+              ) : (
+                <GoogleLoginButton next="/upgrade" className={paidCtaClass} />
+              )}
+            </div>
+            <ul className="mt-7 space-y-2.5 text-sm leading-6 text-black/60">
+              <li>✓ 每期 {monthly.quotaPerTranche} 张生成额度</li>
+              <li>✓ Agent 对话工作台（会员专属）</li>
+              <li>✓ 订阅积分优先消耗，永久积分兜底</li>
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
