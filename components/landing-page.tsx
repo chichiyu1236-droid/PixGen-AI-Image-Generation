@@ -217,7 +217,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             {dataPoints.map((item) => (
               <div
                 key={item.label}
-                className="grid grid-cols-[5.25rem_1fr] items-baseline gap-x-6 border-t border-black/10 py-5 pl-4 lg:py-6 lg:pl-10"
+                className="grid grid-cols-[5.25rem_1fr] items-baseline gap-x-6 border-t border-black/10 py-5 pl-4 lg:py-6 lg:pl-20"
               >
                 <dt className="flex items-baseline gap-1.5 whitespace-nowrap">
                   <span className="font-display text-[2.75rem] leading-none text-black">{item.value}</span>
