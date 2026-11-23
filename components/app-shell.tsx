@@ -123,7 +123,7 @@ export function AppShell({
             </button>
             {videoNotice ? (
               <p className="mx-2 mt-1.5 rounded-xl border border-[#171916]/8 bg-[#fbf9f3]/90 px-3 py-2 text-[11px] leading-5 text-[#6d7368]">
-                视频工作台（/video）正在打磨中，即将支持商品图一键动效与分镜生成。
+                视频功能还在开发中，上线后会在这里开放。
               </p>
             ) : null}
           </div>

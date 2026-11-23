@@ -17,8 +17,8 @@ const bodyFont = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "PixGen · 浅色调油画美学 AI 视觉工作室",
-  description: "以浅色调油画画廊语言构建的 AI 商业视觉与商品图创作工作台，支持经典可视化参数与 Agent 多轮对话改图。",
+  title: "PixGen",
+  description: "选好方向直接出图，也能和 Agent 边聊边改的 AI 生图工具。",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

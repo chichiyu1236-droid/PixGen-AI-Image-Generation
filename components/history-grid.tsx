@@ -226,7 +226,7 @@ export function HistoryGrid({ generations }: { generations: Generation[] }) {
             </div>
             <h2 className="mt-5 font-display text-2xl font-normal text-[#171916]">还没有生成过图片</h2>
             <p className="mt-2.5 text-sm leading-6 text-[#484e45]">
-              生成第一张商业视觉作品后，它会自动沉淀在这里，支持随时复用提示词或用作参考图。
+              出过图后都会保存在这里，随时可以下载或用作参考图。
             </p>
             <Link
               className="mt-6 inline-flex rounded-full bg-[#171916] px-6 py-2.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"

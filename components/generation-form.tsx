@@ -396,7 +396,7 @@ export function GenerationForm({
             <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">CREATE</p>
             <h2 className="mt-1 font-display text-2xl font-normal text-[#171916]">告诉我们你想要什么</h2>
             <p className="mt-1.5 text-xs leading-5 text-[#6d7368]">
-              写下画面主体，点选下方可视化比例与风格卡，系统会自动补足构图与光线。
+              写下画面主体，再选好比例和风格就行。
             </p>
           </div>
 
@@ -699,10 +699,10 @@ export function GenerationForm({
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#171916]/8 pb-3">
           <div className="flex items-baseline gap-2.5">
-            <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">CANVAS</p>
-            <h2 className="font-display text-lg font-normal text-[#171916]">商业画布</h2>
+            <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">PREVIEW</p>
+            <h2 className="font-display text-lg font-normal text-[#171916]">成片画布</h2>
           </div>
-          <p className="text-xs text-[#6d7368]">成功生成后扣 1 积分 · 失败自动不扣费</p>
+          <p className="text-xs text-[#6d7368]">出图成功扣 1 积分，失败不扣</p>
         </div>
 
         {liveCredits < 1 || error === "insufficient_credits" ? <UpgradePrompt /> : null}
@@ -727,9 +727,9 @@ export function GenerationForm({
                 <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-[#566c58]/25 bg-[#e7eee5] text-[#384a3a]">
                   <Loader2 className="animate-spin" size={22} aria-hidden />
                 </div>
-                <h3 className="mt-5 font-display text-2xl font-normal text-[#171916]">正在绘制商业成片</h3>
+                <h3 className="mt-5 font-display text-2xl font-normal text-[#171916]">正在生成图片</h3>
                 <p className="mt-2 text-xs leading-6 text-[#484e45]">
-                  正在融合构图比例、材质光影与留白层次，请保持当前页面打开。
+                  通常需要几十秒，页面保持打开，完成后会自动显示。
                 </p>
                 <div className="mt-5 h-1 overflow-hidden rounded-full bg-[#171916]/8">
                   <div className="h-full w-2/3 animate-pulse rounded-full bg-[#566c58]" />
@@ -868,10 +868,10 @@ export function GenerationForm({
                 <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-[#566c58]/20 bg-[#e7eee5] text-[#384a3a]">
                   <ImagePlus size={20} aria-hidden />
                 </div>
-                <p className="mt-4 font-display text-xs tracking-[0.24em] text-[#6d7368] uppercase">ATELIER STAGE</p>
+                <p className="mt-4 font-display text-xs tracking-[0.24em] text-[#6d7368] uppercase">PREVIEW</p>
                 <p className="mt-2 font-display text-xl font-normal text-[#171916]">生成结果会显示在这里</p>
                 <p className="mt-2 text-xs leading-6 text-[#484e45]">
-                  在左侧写下主体、点选比例与画面质感，点击「生成图片」即可在浅亚麻画布上实时呈现高清成片。
+                  填好左侧内容后，点「生成图片」即可开始。
                 </p>
               </div>
             </div>

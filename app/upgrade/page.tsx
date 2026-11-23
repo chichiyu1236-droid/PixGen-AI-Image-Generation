@@ -29,10 +29,10 @@ export default async function UpgradePage() {
         <MembershipNotice balance={balance} compact />
 
         <header className="border-b border-[#171916]/10 pb-6">
-          <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">MEMBERSHIP PLANS</p>
+          <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">PLANS</p>
           <h1 className="mt-1.5 font-display text-3xl font-normal text-[#171916] sm:text-4xl">会员与积分方案</h1>
           <p className="mt-2.5 max-w-2xl text-sm leading-6 text-[#484e45]">
-            一张图消耗 1 积分。会员卡按期发放生成额度并完整开放 Agent 对话工作台；免费体验含 5 张一次性试用积分，仅限经典模式。
+            1 张图扣 1 积分。会员按期给额度，包含 Agent 对话；免费账号含 5 张一次性试用，仅限经典模式。
           </p>
         </header>
 

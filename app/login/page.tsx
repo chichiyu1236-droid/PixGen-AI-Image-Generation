@@ -32,14 +32,14 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 my-auto max-w-lg space-y-6">
-          <p className="font-display text-xs tracking-[0.24em] text-[#566c58] uppercase">LIGHT-TONED STUDIO</p>
-          <h2 className="font-display text-4xl font-normal leading-[1.15] text-[#171916] xl:text-5xl">
-            让每一件商品，
+          <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">PIXGEN</p>
+          <h2 className="font-display text-4xl font-normal leading-[1.18] text-[#171916] xl:text-5xl">
+            想法不用写很长，
             <br />
-            拥有画廊级自然光影。
+            先出第一张看看。
           </h2>
           <p className="text-sm leading-7 text-[#484e45]">
-            新用户首次登录自动获赠 5 张一次性试用积分。通过可视化比例、风格色票与多图参考快速生成商业视觉，会员更可解锁 Agent 多轮对话改图。
+            新账号自带 5 张试用额度。选好比例和风格就能出图，会员还可以和 Agent 对话改图。
           </p>
 
           {/* Paired Framed Specimen Cards */}
@@ -47,32 +47,32 @@ export default function LoginPage() {
             <div className="overflow-hidden rounded-2xl border border-white/80 bg-[#fbf9f3] p-2 shadow-[0_20px_50px_rgba(23,25,22,0.1)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
                 <Image
-                  src="/images/showcase-perfume.webp"
-                  alt="香氛瓶商业视觉样张"
+                  src="/images/marquee-window.webp"
+                  alt="地中海窗边与海景样张"
                   fill
                   sizes="22vw"
                   className="object-cover"
                 />
               </div>
-              <p className="mt-2 px-1 text-[11px] font-medium text-[#484e45]">香氛静物 · 洞石窗光</p>
+              <p className="mt-2 px-1 text-[11px] text-[#484e45]">胶片日光 · 窗景</p>
             </div>
             <div className="mt-6 overflow-hidden rounded-2xl border border-white/80 bg-[#fbf9f3] p-2 shadow-[0_20px_50px_rgba(23,25,22,0.1)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
                 <Image
-                  src="/images/showcase-candle.webp"
-                  alt="手工香薰商业视觉样张"
+                  src="/images/marquee-bookshop.webp"
+                  alt="街角书店插画样张"
                   fill
                   sizes="22vw"
                   className="object-cover"
                 />
               </div>
-              <p className="mt-2 px-1 text-[11px] font-medium text-[#484e45]">生活场景 · 柔和日光</p>
+              <p className="mt-2 px-1 text-[11px] text-[#484e45]">水粉插画 · 街角书店</p>
             </div>
           </div>
         </div>
 
         <ul className="relative z-10 flex flex-wrap gap-x-6 gap-y-2 text-xs text-[#484e45]">
-          {["5 张免费试用积分", "经典模式 + 多图参考", "历史图库永久留存"].map((item) => (
+          {["新用户 5 张试用", "支持最多 3 张参考图", "作品与提示词自动保存"].map((item) => (
             <li key={item} className="inline-flex items-center gap-1.5">
               <Check size={13} className="text-[#566c58]" aria-hidden />
               {item}
@@ -97,12 +97,12 @@ export default function LoginPage() {
         </div>
 
         <div className="mx-auto my-8 w-full max-w-md rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3]/94 p-7 shadow-[0_24px_64px_rgba(23,25,22,0.065)] backdrop-blur sm:p-9">
-          <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">WELCOME BACK</p>
+          <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">LOGIN</p>
           <h1 className="mt-2.5 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-4xl">
             登录后开始生成
           </h1>
           <p className="mt-3 text-sm leading-6 text-[#484e45]">
-            使用 Google 快捷登录或邮箱密码进入工作台。新用户自动获得 5 张体验积分（一次性，不刷新）。
+            支持 Google 或邮箱登录，新账号送 5 张试用积分（一次性，不刷新）。
           </p>
 
           <div className="mt-7">
@@ -110,7 +110,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-[#92978b]">PixGen · 浅色调油画美学 AI 视觉工作室</p>
+        <p className="text-center text-xs text-[#92978b]">PixGen</p>
       </section>
     </main>
   );

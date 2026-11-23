@@ -424,9 +424,9 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
         >
           {!hasMessages ? (
             <div className="rounded-2xl border border-[#171916]/10 bg-[#f4f0e5]/75 p-4 text-xs leading-6 text-[#484e45]">
-              <p className="font-display text-[11px] tracking-[0.2em] text-[#566c58]">AGENT ATELIER</p>
+              <p className="font-display text-[11px] tracking-[0.2em] text-[#566c58]">AGENT</p>
               <p className="mt-2">
-                不知道想要什么也没关系——哪怕只有一句模糊的感觉也可以。你可以直接说一句想生成什么，或者让我问几个小问题帮你把想法聊清楚。每一步计划和积分消耗都会清晰呈现。
+                只有一个模糊想法也可以。直接说想做什么，或者让我问两句帮你定方向；每步计划和扣分都会写清楚。
               </p>
             </div>
           ) : null}
@@ -556,10 +556,10 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
               <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-[#566c58]/20 bg-[#e7eee5] text-[#384a3a]">
                 <Sparkles size={20} aria-hidden />
               </div>
-              <p className="mt-4 font-display text-xs tracking-[0.24em] text-[#6d7368] uppercase">CANVAS STAGE</p>
+              <p className="mt-4 font-display text-xs tracking-[0.24em] text-[#6d7368] uppercase">CANVAS</p>
               <p className="mt-2 font-display text-xl font-normal text-[#171916]">聊出来的图会出现在这里</p>
               <p className="mt-2 text-xs leading-6 text-[#484e45]">
-                每次生成的作品都会按版本脉络钉在画布上，选中任意一张即可局部修改或生成配色变体。
+                选中任意一张，就能在左侧继续说怎么改。
               </p>
             </div>
           </div>

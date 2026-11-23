@@ -22,8 +22,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 const TIERS = [
-  { quota: 100, label: "标准", blurb: "适合日常电商主图与社媒内容创作", popular: false },
-  { quota: 300, label: "Pro", blurb: "适合品牌视觉团队与高频多轮迭代", popular: true },
+  { quota: 100, label: "标准", blurb: "适合日常出图与轻量使用", popular: false },
+  { quota: 300, label: "Pro", blurb: "适合高频出图与多轮改图", popular: true },
 ];
 
 const FAQ_ITEMS = [

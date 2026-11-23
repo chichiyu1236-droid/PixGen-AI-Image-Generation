@@ -87,8 +87,8 @@ export function GenerateModes({
 
         <p className="hidden text-xs text-[#6d7368] xl:block">
           {mode === "classic"
-            ? "选择比例、风格与参考图，精准生成单张商业视觉"
-            : "用自然语言聊出画面方向，选中画布任意版本多轮迭代"}
+            ? "点选比例、风格和参考图，直接出图"
+            : "用日常话聊清楚想法，点选画布继续改"}
         </p>
       </div>
 
