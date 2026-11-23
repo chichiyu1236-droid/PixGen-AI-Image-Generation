@@ -5,13 +5,14 @@ import {
   ChevronRight,
   ImagePlus,
   MessageSquareText,
+  MousePointerClick,
   Pause,
   Play,
   Send,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { BrandMark } from "@/components/app-shell";
 import { GoogleLoginButton } from "@/components/auth-button";
 import { formatFenAsCny } from "@/lib/billing/money";
@@ -65,10 +66,22 @@ const pricingTiers = [
   { quota: 300, label: "Pro", title: "Pro 会员", popular: true },
 ] as const;
 
+const CLASSIC_STYLE_SAMPLES = [
+  { id: "minimal", label: "极简高级", dot: "#4969a8", src: "/images/marquee-cobalt.webp", alt: "极简高级风格示例" },
+  { id: "photo", label: "真实摄影", dot: "#3ea7b5", src: "/images/marquee-pool.webp", alt: "真实摄影风格示例" },
+  { id: "print", label: "精致插画", dot: "#d95b38", src: "/images/marquee-riso.webp", alt: "精致插画风格示例" },
+  { id: "3d", label: "柔和 3D", dot: "#d8a8b8", src: "/images/marquee-3d-bloom.webp", alt: "柔和 3D 风格示例" },
+] as const;
+
 export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
   const [marqueePaused, setMarqueePaused] = useState(false);
+  const [classicRatio, setClassicRatio] = useState<"1:1" | "4:5" | "16:9">("4:5");
+  const [classicStyle, setClassicStyle] = useState<(typeof CLASSIC_STYLE_SAMPLES)[number]["id"]>("minimal");
   const [featureView, setFeatureView] = useState<"reference" | "prompt">("reference");
   const [agentStep, setAgentStep] = useState<"v1" | "v2">("v1");
+
+  const activeClassicSample =
+    CLASSIC_STYLE_SAMPLES.find((item) => item.id === classicStyle) ?? CLASSIC_STYLE_SAMPLES[0];
 
   useEffect(() => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
@@ -310,7 +323,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
           </div>
         </section>
 
-        {/* 2. FEATURES (#features) — Spacious, Low Text Density */}
+        {/* 2. FEATURES (#features) — Balanced Two-Card Grid + Archive Strip */}
         <section id="features" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
           <div className="mx-auto max-w-6xl">
             <div data-reveal className="reveal flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -325,169 +338,193 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
               </p>
             </div>
 
-            <div className="mt-12 grid gap-6 lg:grid-cols-[0.86fr_1.14fr]">
-              {/* Card 01: Visual Controls */}
+            <div className="mt-10 grid gap-6 lg:grid-cols-2">
+              {/* Card 01: Interactive Visual Controls + Live Preview (zero hollow gap) */}
               <article
                 data-reveal
-                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_24px_64px_rgba(23,25,22,0.055)] sm:p-8"
+                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_22px_58px_rgba(23,25,22,0.055)] sm:p-7"
+              >
+                <div aria-hidden className="pointer-events-none absolute inset-0 -z-0 opacity-60">
+                  <Image
+                    src="/images/oil-section-wash.webp"
+                    alt=""
+                    fill
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    className="object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/72 via-[#fbf9f3]/86 to-[#fbf9f3]/96" />
+                </div>
+
+                <div className="relative z-10 grid gap-3.5 sm:grid-cols-[0.48fr_0.52fr] sm:items-stretch">
+                  {/* Left: Compact interactive ratio & style controls */}
+                  <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/92 p-3.5 shadow-[0_10px_28px_rgba(23,25,22,0.045)] backdrop-blur">
+                    <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="示例比例">
+                      {(
+                        [
+                          { ratio: "1:1", w: "w-4", h: "h-4" },
+                          { ratio: "4:5", w: "w-3.5", h: "h-4" },
+                          { ratio: "16:9", w: "w-5", h: "h-3" },
+                        ] as const
+                      ).map((item) => {
+                        const active = classicRatio === item.ratio;
+                        return (
+                          <button
+                            key={item.ratio}
+                            type="button"
+                            onClick={() => setClassicRatio(item.ratio)}
+                            aria-pressed={active}
+                            className={[
+                              "flex flex-col items-center justify-center rounded-xl border py-2.5 transition",
+                              active
+                                ? "border-[#171916] bg-[#171916] text-[#faf7ef]"
+                                : "border-[#171916]/10 bg-[#f4f0e5]/75 text-[#484e45] hover:border-[#171916]/25",
+                            ].join(" ")}
+                          >
+                            <span
+                              aria-hidden
+                              className={`mb-1.5 block rounded-[3px] border-[1.5px] ${item.w} ${item.h} ${
+                                active ? "border-[#faf7ef]/85" : "border-[#6d7368]/60"
+                              }`}
+                            />
+                            <span className="text-[11px] font-semibold tabular-nums">{item.ratio}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="示例风格">
+                      {CLASSIC_STYLE_SAMPLES.map((chip) => {
+                        const active = classicStyle === chip.id;
+                        return (
+                          <button
+                            key={chip.id}
+                            type="button"
+                            onClick={() => setClassicStyle(chip.id)}
+                            aria-pressed={active}
+                            className={[
+                              "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-left text-[11px] transition",
+                              active
+                                ? "border-[#566c58]/40 bg-[#e7eee5] font-semibold text-[#243426]"
+                                : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25",
+                            ].join(" ")}
+                          >
+                            <span
+                              aria-hidden
+                              className="h-2 w-2 shrink-0 rounded-full border border-black/10"
+                              style={{ backgroundColor: chip.dot }}
+                            />
+                            <span className="truncate">{chip.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right: Live matching artwork preview */}
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] sm:aspect-auto sm:min-h-[196px]">
+                    <Image
+                      key={activeClassicSample.src}
+                      src={activeClassicSample.src}
+                      alt={activeClassicSample.alt}
+                      fill
+                      sizes="(max-width: 1024px) 100vw, 26vw"
+                      className="object-cover transition duration-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="relative z-10 mt-6 border-t border-[#171916]/8 pt-5">
+                  <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">01 · 经典模式</p>
+                  <h3 className="mt-1.5 font-display text-2xl font-normal text-[#171916]">
+                    先定方向，一次出图
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-[#484e45]">
+                    挑好比例、风格和留白，写清主体就行。
+                  </p>
+                </div>
+              </article>
+
+              {/* Card 02: Reference Images — Matched Height & Visual Rhythm */}
+              <article
+                data-reveal
+                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_22px_58px_rgba(23,25,22,0.055)] sm:p-7"
+                style={{ transitionDelay: "90ms" }}
               >
                 <div aria-hidden className="pointer-events-none absolute inset-0 -z-0 opacity-65">
                   <Image
                     src="/images/oil-section-wash.webp"
                     alt=""
                     fill
-                    sizes="(max-width: 1024px) 100vw, 45vw"
-                    className="object-cover"
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    className="scale-x-[-1] object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/72 via-[#fbf9f3]/86 to-[#fbf9f3]/96" />
                 </div>
 
-                <div className="relative z-10 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/92 p-4 shadow-[0_14px_34px_rgba(23,25,22,0.05)] backdrop-blur">
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {[
-                      { ratio: "1:1", w: "w-6", h: "h-6", active: false },
-                      { ratio: "4:5", w: "w-5", h: "h-6", active: true },
-                      { ratio: "16:9", w: "w-8", h: "h-5", active: false },
-                    ].map((item) => (
-                      <div
-                        key={item.ratio}
-                        className={[
-                          "flex flex-col items-center justify-center rounded-xl border px-2 py-3.5",
-                          item.active
-                            ? "border-[#171916] bg-[#171916] text-[#faf7ef]"
-                            : "border-[#171916]/10 bg-[#f4f0e5]/75 text-[#484e45]",
-                        ].join(" ")}
-                      >
-                        <span
-                          aria-hidden
-                          className={`mb-2 block rounded-[4px] border-[1.5px] ${item.w} ${item.h} ${
-                            item.active ? "border-[#faf7ef]/80" : "border-[#6d7368]/60"
-                          }`}
-                        />
-                        <span className="text-xs font-semibold tabular-nums">{item.ratio}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-3.5 flex flex-wrap gap-2">
-                    {[
-                      { label: "极简高级", dot: "#d7d2c4", active: true },
-                      { label: "真实摄影", dot: "#a9b79f", active: false },
-                      { label: "精致插画", dot: "#e1b4a6", active: false },
-                      { label: "柔和 3D", dot: "#b8ccd8", active: false },
-                    ].map((chip) => (
-                      <span
-                        key={chip.label}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
-                          chip.active
-                            ? "border-[#566c58]/35 bg-[#e7eee5] font-medium text-[#2c3c2e]"
-                            : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45]"
+                <div className="relative z-10 grid gap-3.5 sm:grid-cols-[0.44fr_0.56fr] sm:items-stretch">
+                  <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/92 p-3.5 shadow-[0_10px_28px_rgba(23,25,22,0.045)] backdrop-blur">
+                    <div className="inline-flex w-full rounded-full border border-[#171916]/10 bg-[#f4f0e5]/90 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setFeatureView("reference")}
+                        aria-pressed={featureView === "reference"}
+                        className={`flex-1 rounded-full py-1.5 text-[11px] font-medium transition ${
+                          featureView === "reference" ? "bg-[#171916] text-[#faf7ef]" : "text-[#484e45] hover:text-[#171916]"
                         }`}
                       >
-                        <span
-                          aria-hidden
-                          className="h-2 w-2 rounded-full border border-black/10"
-                          style={{ backgroundColor: chip.dot }}
-                        />
-                        {chip.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                        带参考图
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeatureView("prompt")}
+                        aria-pressed={featureView === "prompt"}
+                        className={`flex-1 rounded-full py-1.5 text-[11px] font-medium transition ${
+                          featureView === "prompt" ? "bg-[#171916] text-[#faf7ef]" : "text-[#484e45] hover:text-[#171916]"
+                        }`}
+                      >
+                        直接描述
+                      </button>
+                    </div>
 
-                <div className="relative z-10 mt-9">
-                  <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">01 · 经典模式</p>
-                  <h3 className="mt-2 font-display text-2xl font-normal text-[#171916] sm:text-3xl">
-                    先定方向，一次出图
-                  </h3>
-                  <p className="mt-2.5 text-sm leading-7 text-[#484e45]">
-                    挑好比例、风格和留白，写清主体就行。
-                  </p>
-                </div>
-              </article>
-
-              {/* Card 02: Reference Images */}
-              <article
-                data-reveal
-                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_24px_64px_rgba(23,25,22,0.055)] sm:p-8"
-                style={{ transitionDelay: "90ms" }}
-              >
-                <div aria-hidden className="pointer-events-none absolute inset-0 -z-0 opacity-75">
-                  <Image
-                    src="/images/oil-section-wash.webp"
-                    alt=""
-                    fill
-                    sizes="(max-width: 1024px) 100vw, 55vw"
-                    className="scale-x-[-1] object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/68 via-[#fbf9f3]/82 to-[#fbf9f3]/96" />
-                </div>
-
-                <div className="relative z-10">
-                  <div className="inline-flex rounded-full border border-[#171916]/10 bg-[#f4f0e5]/90 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setFeatureView("reference")}
-                      aria-pressed={featureView === "reference"}
-                      className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
-                        featureView === "reference" ? "bg-[#171916] text-[#faf7ef]" : "text-[#484e45] hover:text-[#171916]"
-                      }`}
-                    >
-                      带参考图
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFeatureView("prompt")}
-                      aria-pressed={featureView === "prompt"}
-                      className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
-                        featureView === "prompt" ? "bg-[#171916] text-[#faf7ef]" : "text-[#484e45] hover:text-[#171916]"
-                      }`}
-                    >
-                      直接写描述
-                    </button>
-                  </div>
-
-                  <div className="mt-4 grid gap-3.5 sm:grid-cols-[0.38fr_0.62fr] sm:items-stretch">
-                    <div className="flex flex-col justify-between rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/92 p-4 backdrop-blur">
-                      {featureView === "reference" ? (
-                        <div className="flex items-center gap-2">
-                          <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-[#171916]/10">
-                            <Image src="/images/marquee-window.webp" alt="参考图 1" fill sizes="48px" className="object-cover" />
-                          </div>
-                          <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-[#171916]/10">
-                            <Image src="/images/marquee-figs.webp" alt="参考图 2" fill sizes="48px" className="object-cover" />
-                          </div>
-                          <span className="grid h-12 w-12 place-items-center rounded-xl border border-dashed border-[#171916]/18 text-[#6d7368]">
-                            <ImagePlus size={14} aria-hidden />
-                          </span>
+                    {featureView === "reference" ? (
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-[#171916]/10">
+                          <Image src="/images/marquee-window.webp" alt="参考图 1" fill sizes="44px" className="object-cover" />
                         </div>
-                      ) : (
-                        <span className="text-xs font-medium text-[#566c58]">一句话描述</span>
-                      )}
-                      <p className="mt-4 text-xs leading-6 text-[#484e45]">
-                        {featureView === "reference"
-                          ? "照着参考图的色调与光线，换到窗边桌面。"
-                          : "巴黎街角书店橱窗，清晨阳光，水粉插画风。"}
-                      </p>
-                    </div>
+                        <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-[#171916]/10">
+                          <Image src="/images/marquee-figs.webp" alt="参考图 2" fill sizes="44px" className="object-cover" />
+                        </div>
+                        <span className="grid h-11 w-11 place-items-center rounded-xl border border-dashed border-[#171916]/18 text-[#6d7368]">
+                          <ImagePlus size={14} aria-hidden />
+                        </span>
+                      </div>
+                    ) : null}
 
-                    <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc]">
-                      <Image
-                        src={featureView === "reference" ? "/images/marquee-window.webp" : "/images/marquee-bookshop.webp"}
-                        alt={featureView === "reference" ? "带参考图生成效果" : "文字描述生成效果"}
-                        fill
-                        sizes="(max-width: 1024px) 100vw, 34vw"
-                        className="object-cover transition duration-500"
-                      />
-                    </div>
+                    <p className="text-xs leading-5 text-[#484e45]">
+                      {featureView === "reference"
+                        ? "照着参考图的色调与光线，换到窗边桌面。"
+                        : "巴黎街角书店橱窗，清晨阳光，水粉插画风。"}
+                    </p>
+                  </div>
+
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] sm:aspect-auto sm:min-h-[196px]">
+                    <Image
+                      key={featureView}
+                      src={featureView === "reference" ? "/images/marquee-window.webp" : "/images/marquee-bookshop.webp"}
+                      alt={featureView === "reference" ? "带参考图生成效果" : "文字描述生成效果"}
+                      fill
+                      sizes="(max-width: 1024px) 100vw, 28vw"
+                      className="object-cover transition duration-500"
+                    />
                   </div>
                 </div>
 
-                <div className="relative z-10 mt-9">
+                <div className="relative z-10 mt-6 border-t border-[#171916]/8 pt-5">
                   <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">02 · 参考图</p>
-                  <h3 className="mt-2 font-display text-2xl font-normal text-[#171916] sm:text-3xl">
+                  <h3 className="mt-1.5 font-display text-2xl font-normal text-[#171916]">
                     照着样图，接着出新图
                   </h3>
-                  <p className="mt-2.5 text-sm leading-7 text-[#484e45]">
+                  <p className="mt-2 text-sm leading-6 text-[#484e45]">
                     传本地图片或从历史里挑，每次最多带 3 张。
                   </p>
                 </div>
@@ -497,14 +534,14 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             {/* Card 03: Archive Reuse Strip */}
             <article
               data-reveal
-              className="reveal mt-6 grid gap-6 rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-6 shadow-[0_18px_46px_rgba(23,25,22,0.045)] sm:p-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center"
+              className="reveal mt-6 grid gap-6 rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-6 shadow-[0_18px_46px_rgba(23,25,22,0.045)] sm:p-7 lg:grid-cols-[0.95fr_1.05fr] lg:items-center"
             >
               <div>
                 <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">03 · 作品留存</p>
-                <h3 className="mt-2 font-display text-2xl font-normal text-[#171916] sm:text-3xl">
+                <h3 className="mt-1.5 font-display text-2xl font-normal text-[#171916]">
                   满意的图，随时接着改
                 </h3>
-                <p className="mt-3 max-w-md text-sm leading-7 text-[#484e45]">
+                <p className="mt-2.5 max-w-md text-sm leading-7 text-[#484e45]">
                   成片和提示词都会存进历史记录。想下载原图、复制描述，或设为参考图出下一版，点一下就行。
                 </p>
               </div>
@@ -589,48 +626,88 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                 </div>
               </div>
 
-              <AgentChatPreview step={agentStep} />
+              <AgentChatPreview
+                step={agentStep}
+                onToggle={() => setAgentStep((prev) => (prev === "v1" ? "v2" : "v1"))}
+              />
             </div>
           </div>
         </section>
 
-        {/* 4. RECORDS METRICS (#records) */}
+        {/* 4. RECORDS METRICS (#records) — Grounded Editorial Monograph Panel + Indented Fixed Numeric Column */}
         <section id="records" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
-          <div data-reveal className="reveal mx-auto grid max-w-6xl gap-12 lg:grid-cols-[0.72fr_1.28fr] lg:gap-16">
-            <div>
-              <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">RECORDS</p>
-              <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.65rem]">
-                用过的图，都留着。
-              </h2>
-              <p className="mt-4 max-w-sm text-sm leading-7 text-[#484e45]">
-                每次成图都会记下参数和说明，需要时随时翻出来用。
-              </p>
-              <Link
-                className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[#171916] underline-offset-4 transition hover:text-[#384a3a] hover:underline"
-                href="/history"
-              >
-                打开历史记录
-                <ArrowRight size={15} aria-hidden />
-              </Link>
+          <div
+            data-reveal
+            className="reveal mx-auto grid max-w-6xl gap-8 rounded-[2.25rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-6 shadow-[0_22px_58px_rgba(23,25,22,0.05)] sm:p-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-stretch lg:gap-12 lg:p-12"
+          >
+            {/* Left column: Top copy + Bottom visual archive pair (balanced top-to-bottom weight) */}
+            <div className="flex flex-col justify-between gap-8">
+              <div>
+                <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">RECORDS</p>
+                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.45rem]">
+                  用过的图，都留着。
+                </h2>
+                <p className="mt-4 max-w-sm text-sm leading-7 text-[#484e45]">
+                  每次成图都会记下参数和说明，需要时随时翻出来用。
+                </p>
+                <Link
+                  className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-[#171916] underline-offset-4 transition hover:text-[#384a3a] hover:underline"
+                  href="/history"
+                >
+                  打开历史记录
+                  <ArrowRight size={15} aria-hidden />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f4f0e5] p-1.5">
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl">
+                    <Image
+                      src="/images/marquee-matcha.webp"
+                      alt="历史保存的抹茶静物作品"
+                      fill
+                      sizes="(max-width: 1024px) 45vw, 18vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f4f0e5] p-1.5">
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl">
+                    <Image
+                      src="/images/marquee-meadow.webp"
+                      alt="历史保存的海岸野花油画作品"
+                      fill
+                      sizes="(max-width: 1024px) 45vw, 18vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <dl className="border-b border-[#171916]/10">
-              {dataPoints.map((item) => (
-                <div
-                  key={item.label}
-                  className="grid grid-cols-[6rem_1fr] items-baseline gap-x-6 border-t border-[#171916]/10 py-6 pl-5 sm:pl-10 lg:pl-24"
-                >
-                  <dt className="flex items-baseline gap-1.5 whitespace-nowrap tabular-nums">
-                    <span className="font-display text-[2.85rem] leading-none text-[#171916]">{item.value}</span>
-                    <span className="text-sm font-medium text-[#6d7368]">{item.unit}</span>
-                  </dt>
-                  <dd className="text-sm leading-6 text-[#6d7368]">
-                    <span className="block text-base font-semibold text-[#171916]">{item.label}</span>
-                    {item.detail}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            {/* Right column: Grounded ledger card preserving OpenSpec indented fixed-width numeric column */}
+            <div className="flex flex-col justify-center rounded-[1.5rem] border border-[#171916]/8 bg-[#f4f0e5]/65 px-2 py-2 sm:px-4">
+              <dl>
+                {dataPoints.map((item, idx) => (
+                  <div
+                    key={item.label}
+                    className={[
+                      "grid grid-cols-[5.75rem_1fr] items-baseline gap-x-6 py-5 pl-4 sm:pl-8 lg:pl-14",
+                      idx > 0 ? "border-t border-[#171916]/10" : "",
+                    ].join(" ")}
+                  >
+                    <dt className="flex items-baseline gap-1.5 whitespace-nowrap tabular-nums">
+                      <span className="font-display text-[2.6rem] leading-none text-[#171916]">{item.value}</span>
+                      <span className="text-sm font-medium text-[#6d7368]">{item.unit}</span>
+                    </dt>
+                    <dd className="text-sm leading-6 text-[#6d7368]">
+                      <span className="block text-base font-semibold text-[#171916]">{item.label}</span>
+                      {item.detail}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </div>
         </section>
 
@@ -729,7 +806,25 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
   );
 }
 
-function AgentChatPreview({ step }: { step: "v1" | "v2" }) {
+function AgentChatPreview({
+  step,
+  onToggle,
+}: {
+  step: "v1" | "v2";
+  onToggle: () => void;
+}) {
+  const [ripple, setRipple] = useState<{ id: number; x: number; y: number } | null>(null);
+
+  function handleImageClick(event: MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setRipple({
+      id: Date.now(),
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+    onToggle();
+  }
+
   return (
     <div className="relative">
       <div
@@ -745,9 +840,6 @@ function AgentChatPreview({ step }: { step: "v1" | "v2" }) {
             <span className="h-2.5 w-2.5 rounded-full bg-[#596e7c]/45" />
             <p className="ml-2 text-xs font-medium text-[#484e45]">Agent 对话</p>
           </div>
-          <span className="rounded-full border border-[#171916]/10 bg-[#fbf9f3] px-2.5 py-0.5 font-mono text-[10px] text-[#6d7368]">
-            {step === "v1" ? "图 1 · v1" : "图 2 · v2"}
-          </span>
         </div>
 
         <div className="grid gap-4 p-5 sm:grid-cols-[1.06fr_0.94fr] sm:items-stretch">
@@ -766,7 +858,7 @@ function AgentChatPreview({ step }: { step: "v1" | "v2" }) {
                 <div className="rounded-[4px_1.15rem_1.15rem_1.15rem] border border-[#171916]/8 bg-[#f4f0e5]/85 px-3.5 py-2.5 text-xs leading-6 text-[#171916]">
                   {step === "v1"
                     ? "好，先按明亮自然光和干净构图出一版看看。"
-                    : "已基于 图 1 · v1 调暖了光线，保留了原来的构图。"}
+                    : "已经调暖了光线，原来的构图保留不动。"}
                 </div>
 
                 <div className="flex flex-wrap gap-1.5 text-[11px] text-[#484e45]">
@@ -792,21 +884,46 @@ function AgentChatPreview({ step }: { step: "v1" | "v2" }) {
           </div>
 
           <div className="flex flex-col justify-between rounded-2xl border border-[#171916]/10 bg-[#f2eee2]/85 p-3">
-            <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-[#171916]/8 bg-[#eee9dc]">
+            <button
+              type="button"
+              onClick={handleImageClick}
+              aria-label="点击图片切换改图效果"
+              className="group relative aspect-[4/3] w-full cursor-pointer overflow-hidden rounded-xl border border-[#171916]/10 bg-[#eee9dc] text-left transition duration-300 hover:border-[#384a3a]/45 hover:shadow-[0_14px_30px_rgba(23,25,22,0.12)] active:scale-[0.97]"
+            >
               <Image
+                key={step}
                 src={step === "v1" ? "/images/marquee-pool.webp" : "/images/marquee-figs.webp"}
-                alt={step === "v1" ? "智能体生成版本 v1 示例" : "智能体改图版本 v2 示例"}
+                alt={step === "v1" ? "智能体首轮出图示例" : "智能体改图结果示例"}
                 fill
                 sizes="(max-width: 1024px) 100vw, 28vw"
-                className="object-cover"
+                className="object-cover transition duration-500 group-hover:scale-[1.03]"
               />
-              <span className="absolute left-2 top-2 rounded-full bg-[#171916]/72 px-2.5 py-0.5 font-mono text-[10px] text-[#faf7ef] backdrop-blur">
-                {step === "v1" ? "图 1 · v1" : "图 2 · v2 · 基于 v1"}
+
+              {/* Subtle animated click-cue pointer at bottom-right */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute bottom-2.5 right-2.5 flex items-center justify-center"
+              >
+                <span className="pix-cursor-ring absolute h-8 w-8 rounded-full border-2 border-[#fbf9f3]/90" />
+                <span className="pix-cursor-tap grid h-8 w-8 place-items-center rounded-full bg-[#171916]/75 text-[#faf7ef] shadow-md backdrop-blur-sm transition group-hover:bg-[#171916]">
+                  <MousePointerClick size={14} />
+                </span>
               </span>
-            </div>
+
+              {/* Expanding radial click ripple at exact cursor click point */}
+              {ripple ? (
+                <span
+                  key={ripple.id}
+                  aria-hidden
+                  className="pix-click-ripple pointer-events-none absolute h-14 w-14 rounded-full border-2 border-[#fbf9f3] bg-[#fbf9f3]/35"
+                  style={{ left: ripple.x, top: ripple.y }}
+                />
+              ) : null}
+            </button>
+
             <div className="mt-2.5 flex items-center justify-between text-[11px] text-[#6d7368]">
               <span>原版本自动保留</span>
-              <span className="font-medium text-[#384a3a]">点选即可续改</span>
+              <span className="font-medium text-[#384a3a]">点击图片切换效果</span>
             </div>
           </div>
         </div>

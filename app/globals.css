@@ -304,6 +304,60 @@ select {
   background: rgba(23, 25, 22, 0.26);
 }
 
+/* Interactive image click ripple & gentle pointer cue in landing #agent preview */
+@keyframes pix-click-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.35);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.8);
+    opacity: 0;
+  }
+}
+
+@keyframes pix-cursor-tap {
+  0%,
+  58%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  70% {
+    transform: translate(-2px, -2px) scale(0.88);
+  }
+  82% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes pix-cursor-ring {
+  0%,
+  64% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  72% {
+    transform: scale(0.85);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.pix-click-ripple {
+  animation: pix-click-ripple 580ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.pix-cursor-tap {
+  animation: pix-cursor-tap 2.6s ease-in-out infinite;
+}
+
+.pix-cursor-ring {
+  animation: pix-cursor-ring 2.6s ease-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -320,6 +374,12 @@ select {
   }
 
   .oil-breathe {
+    animation: none;
+  }
+
+  .pix-click-ripple,
+  .pix-cursor-tap,
+  .pix-cursor-ring {
     animation: none;
   }
 
