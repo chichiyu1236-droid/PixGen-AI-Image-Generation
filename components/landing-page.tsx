@@ -3,7 +3,6 @@
 import {
   ArrowRight,
   ChevronRight,
-  ImagePlus,
   MessageSquareText,
   MousePointerClick,
   Pause,
@@ -487,24 +486,47 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                     </div>
 
                     {featureView === "reference" ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-[#171916]/10">
-                          <Image src="/images/marquee-window.webp" alt="参考图 1" fill sizes="44px" className="object-cover" />
+                      <>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {[
+                            { src: "/images/marquee-window.webp", alt: "参考图 1" },
+                            { src: "/images/marquee-figs.webp", alt: "参考图 2" },
+                            { src: "/images/marquee-meadow.webp", alt: "参考图 3" },
+                          ].map((ref) => (
+                            <div
+                              key={ref.src}
+                              className="relative aspect-square overflow-hidden rounded-xl border border-[#171916]/10 bg-[#eee9dc]"
+                            >
+                              <Image
+                                src={ref.src}
+                                alt={ref.alt}
+                                fill
+                                sizes="64px"
+                                loading="eager"
+                                className="object-cover"
+                              />
+                            </div>
+                          ))}
                         </div>
-                        <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-[#171916]/10">
-                          <Image src="/images/marquee-figs.webp" alt="参考图 2" fill sizes="44px" className="object-cover" />
+                        <p className="text-xs leading-5 text-[#484e45]">
+                          照着参考图的色调与光线，换到窗边桌面。
+                        </p>
+                      </>
+                    ) : (
+                      <div className="flex flex-1 flex-col justify-between gap-2.5 rounded-xl border border-[#171916]/8 bg-[#f4f0e5]/75 p-3">
+                        <p className="text-xs leading-6 text-[#171916]">
+                          巴黎街角书店橱窗，清晨阳光，水粉插画风。
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="rounded-full border border-[#171916]/10 bg-[#fbf9f3] px-2 py-0.5 text-[10px] text-[#484e45]">
+                            精致插画
+                          </span>
+                          <span className="rounded-full border border-[#171916]/10 bg-[#fbf9f3] px-2 py-0.5 text-[10px] text-[#484e45]">
+                            4:5
+                          </span>
                         </div>
-                        <span className="grid h-11 w-11 place-items-center rounded-xl border border-dashed border-[#171916]/18 text-[#6d7368]">
-                          <ImagePlus size={14} aria-hidden />
-                        </span>
                       </div>
-                    ) : null}
-
-                    <p className="text-xs leading-5 text-[#484e45]">
-                      {featureView === "reference"
-                        ? "照着参考图的色调与光线，换到窗边桌面。"
-                        : "巴黎街角书店橱窗，清晨阳光，水粉插画风。"}
-                    </p>
+                    )}
                   </div>
 
                   <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] sm:aspect-auto sm:min-h-[196px]">
@@ -634,79 +656,72 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
           </div>
         </section>
 
-        {/* 4. RECORDS METRICS (#records) — Grounded Editorial Monograph Panel + Indented Fixed Numeric Column */}
+        {/* 4. RECORDS METRICS (#records) — Illustrated Backdrop + Frosted Ledger Card */}
         <section id="records" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
           <div
             data-reveal
-            className="reveal mx-auto grid max-w-6xl gap-8 rounded-[2.25rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-6 shadow-[0_22px_58px_rgba(23,25,22,0.05)] sm:p-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-stretch lg:gap-12 lg:p-12"
+            className="reveal relative mx-auto max-w-6xl overflow-hidden rounded-[2.25rem] border border-[#171916]/10 bg-[#fbf9f3] shadow-[0_24px_64px_rgba(23,25,22,0.06)]"
           >
-            {/* Left column: Top copy + Bottom visual archive pair (balanced top-to-bottom weight) */}
-            <div className="flex flex-col justify-between gap-8">
-              <div>
+            {/* Light-toned editorial watercolor/gouache illustration backdrop */}
+            <div aria-hidden className="pointer-events-none absolute inset-0">
+              <Image
+                src="/images/oil-records-bg.webp"
+                alt=""
+                fill
+                sizes="100vw"
+                className="object-cover object-left-bottom opacity-90"
+              />
+              <div
+                className="absolute inset-0"
+                style={{
+                  background:
+                    "linear-gradient(105deg, rgba(251,249,243,0.78) 0%, rgba(251,249,243,0.52) 44%, rgba(251,249,243,0.34) 100%)",
+                }}
+              />
+            </div>
+
+            <div className="relative z-10 grid gap-8 p-6 sm:p-10 lg:grid-cols-[0.76fr_1.24fr] lg:items-center lg:gap-12 lg:p-12">
+              {/* Left column: vertically centered cleanly over the illustration */}
+              <div className="lg:self-center">
                 <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">RECORDS</p>
-                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.45rem]">
+                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.5rem]">
                   用过的图，都留着。
                 </h2>
-                <p className="mt-4 max-w-sm text-sm leading-7 text-[#484e45]">
+                <p className="mt-4 max-w-xs text-sm leading-7 text-[#484e45]">
                   每次成图都会记下参数和说明，需要时随时翻出来用。
                 </p>
                 <Link
-                  className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-[#171916] underline-offset-4 transition hover:text-[#384a3a] hover:underline"
+                  className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#171916] px-5 py-2.5 text-xs font-medium text-[#faf7ef] shadow-[0_10px_24px_rgba(23,25,22,0.14)] transition hover:bg-[#2a2e28]"
                   href="/history"
                 >
                   打开历史记录
-                  <ArrowRight size={15} aria-hidden />
+                  <ArrowRight size={14} aria-hidden />
                 </Link>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f4f0e5] p-1.5">
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl">
-                    <Image
-                      src="/images/marquee-matcha.webp"
-                      alt="历史保存的抹茶静物作品"
-                      fill
-                      sizes="(max-width: 1024px) 45vw, 18vw"
-                      className="object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f4f0e5] p-1.5">
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-xl">
-                    <Image
-                      src="/images/marquee-meadow.webp"
-                      alt="历史保存的海岸野花油画作品"
-                      fill
-                      sizes="(max-width: 1024px) 45vw, 18vw"
-                      className="object-cover"
-                    />
-                  </div>
-                </div>
+              {/* Right column: Frosted vellum ledger panel floating over illustration */}
+              <div className="rounded-[1.6rem] border border-white/80 bg-[#fbf9f3]/82 px-2 py-2 shadow-[0_20px_50px_rgba(23,25,22,0.08)] backdrop-blur-md sm:px-4">
+                <dl>
+                  {dataPoints.map((item, idx) => (
+                    <div
+                      key={item.label}
+                      className={[
+                        "grid grid-cols-[5.75rem_1fr] items-baseline gap-x-6 py-5 pl-4 sm:pl-8 lg:pl-14",
+                        idx > 0 ? "border-t border-[#171916]/10" : "",
+                      ].join(" ")}
+                    >
+                      <dt className="flex items-baseline gap-1.5 whitespace-nowrap tabular-nums">
+                        <span className="font-display text-[2.6rem] leading-none text-[#171916]">{item.value}</span>
+                        <span className="text-sm font-medium text-[#6d7368]">{item.unit}</span>
+                      </dt>
+                      <dd className="text-sm leading-6 text-[#484e45]">
+                        <span className="block text-base font-semibold text-[#171916]">{item.label}</span>
+                        {item.detail}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
-            </div>
-
-            {/* Right column: Grounded ledger card preserving OpenSpec indented fixed-width numeric column */}
-            <div className="flex flex-col justify-center rounded-[1.5rem] border border-[#171916]/8 bg-[#f4f0e5]/65 px-2 py-2 sm:px-4">
-              <dl>
-                {dataPoints.map((item, idx) => (
-                  <div
-                    key={item.label}
-                    className={[
-                      "grid grid-cols-[5.75rem_1fr] items-baseline gap-x-6 py-5 pl-4 sm:pl-8 lg:pl-14",
-                      idx > 0 ? "border-t border-[#171916]/10" : "",
-                    ].join(" ")}
-                  >
-                    <dt className="flex items-baseline gap-1.5 whitespace-nowrap tabular-nums">
-                      <span className="font-display text-[2.6rem] leading-none text-[#171916]">{item.value}</span>
-                      <span className="text-sm font-medium text-[#6d7368]">{item.unit}</span>
-                    </dt>
-                    <dd className="text-sm leading-6 text-[#6d7368]">
-                      <span className="block text-base font-semibold text-[#171916]">{item.label}</span>
-                      {item.detail}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
             </div>
           </div>
         </section>
