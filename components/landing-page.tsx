@@ -2,16 +2,17 @@
 
 import {
   ArrowRight,
+  Check,
   ChevronRight,
+  Loader2,
   MessageSquareText,
-  MousePointerClick,
   Pause,
   Play,
   Send,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState } from "react";
 import { BrandMark } from "@/components/app-shell";
 import { GoogleLoginButton } from "@/components/auth-button";
 import { formatFenAsCny } from "@/lib/billing/money";
@@ -53,6 +54,37 @@ const MARQUEE_ROWS: readonly (readonly ShowcaseCard[])[] = [
 
 const ROW_DURATIONS = ["58s", "68s", "54s"] as const;
 
+const CLASSIC_STYLE_SAMPLES = [
+  { id: "minimal", label: "极简高级", dot: "#4969a8", src: "/images/marquee-cobalt.webp", alt: "极简高级风格示例" },
+  { id: "photo", label: "真实摄影", dot: "#3ea7b5", src: "/images/marquee-pool.webp", alt: "真实摄影风格示例" },
+  { id: "print", label: "精致插画", dot: "#d95b38", src: "/images/marquee-riso.webp", alt: "精致插画风格示例" },
+  { id: "3d", label: "柔和 3D", dot: "#d8a8b8", src: "/images/marquee-3d-bloom.webp", alt: "柔和 3D 风格示例" },
+] as const;
+
+const REFERENCE_SAMPLES = [
+  {
+    id: "window",
+    thumb: "/images/marquee-window.webp",
+    result: "/images/marquee-window.webp",
+    alt: "地中海窗边海景参考图",
+    note: "保留窗框和通透蓝调，光线放柔和一点。",
+  },
+  {
+    id: "figs",
+    thumb: "/images/marquee-figs.webp",
+    result: "/images/marquee-figs.webp",
+    alt: "夏日无花果与蜜桃静物参考图",
+    note: "按这组暖调桌布光线，重新安排水果与花束。",
+  },
+  {
+    id: "meadow",
+    thumb: "/images/marquee-meadow.webp",
+    result: "/images/marquee-meadow.webp",
+    alt: "海岸野花与灯塔油画参考图",
+    note: "延续浅色油画笔触和海岸色调，放宽远景视角。",
+  },
+] as const;
+
 const dataPoints = [
   { value: "7", unit: "个", label: "创作选项", detail: "用途、比例、质感、场景、留白、主体和补充说明" },
   { value: "1", unit: "积分", label: "每张图的消耗", detail: "成功出图才扣分，失败不扣" },
@@ -65,11 +97,178 @@ const pricingTiers = [
   { quota: 300, label: "Pro", title: "Pro 会员", popular: true },
 ] as const;
 
-const CLASSIC_STYLE_SAMPLES = [
-  { id: "minimal", label: "极简高级", dot: "#4969a8", src: "/images/marquee-cobalt.webp", alt: "极简高级风格示例" },
-  { id: "photo", label: "真实摄影", dot: "#3ea7b5", src: "/images/marquee-pool.webp", alt: "真实摄影风格示例" },
-  { id: "print", label: "精致插画", dot: "#d95b38", src: "/images/marquee-riso.webp", alt: "精致插画风格示例" },
-  { id: "3d", label: "柔和 3D", dot: "#d8a8b8", src: "/images/marquee-3d-bloom.webp", alt: "柔和 3D 风格示例" },
+/** Autonomous screen-recording sequence for #agent preview */
+type DemoKeyframe = {
+  stageIndex: 0 | 1 | 2;
+  cursorX: number;
+  cursorY: number;
+  clicking: boolean;
+  ripple: boolean;
+  composerText: string;
+  userPrompt: string;
+  agentReply: string;
+  toolLabel: string;
+  imageSrc: string;
+  imageAlt: string;
+  canvasSelected: boolean;
+  generating: boolean;
+  durationMs: number;
+};
+
+const AGENT_DEMO_FRAMES: readonly DemoKeyframe[] = [
+  // Round 1: Type prompt -> move to send -> click -> generate pool poster
+  {
+    stageIndex: 0,
+    cursorX: 27,
+    cursorY: 86.4,
+    clicking: false,
+    ripple: false,
+    composerText: "做一张夏日泳池海报，清爽一点",
+    userPrompt: "",
+    agentReply: "说说你的想法，我来帮你定方向并出图。",
+    toolLabel: "",
+    imageSrc: "/images/marquee-pool.webp",
+    imageAlt: "夏日泳池海报",
+    canvasSelected: false,
+    generating: false,
+    durationMs: 1200,
+  },
+  {
+    stageIndex: 0,
+    cursorX: 46.1,
+    cursorY: 86.4,
+    clicking: true,
+    ripple: true,
+    composerText: "做一张夏日泳池海报，清爽一点",
+    userPrompt: "做一张夏日泳池海报，清爽一点",
+    agentReply: "正在按晴朗自然光和干净构图出图…",
+    toolLabel: "生成图片 · −1 积分",
+    imageSrc: "/images/marquee-pool.webp",
+    imageAlt: "夏日泳池海报",
+    canvasSelected: false,
+    generating: true,
+    durationMs: 950,
+  },
+  {
+    stageIndex: 0,
+    cursorX: 68,
+    cursorY: 46,
+    clicking: false,
+    ripple: false,
+    composerText: "",
+    userPrompt: "做一张夏日泳池海报，清爽一点",
+    agentReply: "第一版好了，想调光线或换风格直接点图说。",
+    toolLabel: "生成图片 · −1 积分",
+    imageSrc: "/images/marquee-pool.webp",
+    imageAlt: "夏日泳池海报",
+    canvasSelected: false,
+    generating: false,
+    durationMs: 1450,
+  },
+  // Round 2: Cursor moves onto canvas image -> clicks to select -> sends warm-light edit -> figs artwork blooms
+  {
+    stageIndex: 1,
+    cursorX: 74,
+    cursorY: 42,
+    clicking: true,
+    ripple: true,
+    composerText: "",
+    userPrompt: "做一张夏日泳池海报，清爽一点",
+    agentReply: "第一版好了，想调光线或换风格直接点图说。",
+    toolLabel: "生成图片 · −1 积分",
+    imageSrc: "/images/marquee-pool.webp",
+    imageAlt: "夏日泳池海报",
+    canvasSelected: true,
+    generating: false,
+    durationMs: 1050,
+  },
+  {
+    stageIndex: 1,
+    cursorX: 46.1,
+    cursorY: 86.4,
+    clicking: true,
+    ripple: true,
+    composerText: "换成傍晚暖光，桌上有无花果和蜜桃",
+    userPrompt: "换成傍晚暖光，桌上有无花果和蜜桃",
+    agentReply: "收到，按选中画面调整为傍晚暖光静物…",
+    toolLabel: "改图 · −1 积分",
+    imageSrc: "/images/marquee-pool.webp",
+    imageAlt: "夏日泳池海报",
+    canvasSelected: true,
+    generating: true,
+    durationMs: 950,
+  },
+  {
+    stageIndex: 1,
+    cursorX: 72,
+    cursorY: 46,
+    clicking: false,
+    ripple: false,
+    composerText: "",
+    userPrompt: "换成傍晚暖光，桌上有无花果和蜜桃",
+    agentReply: "暖光版本已放上画布，原版会一起留着。",
+    toolLabel: "改图 · −1 积分",
+    imageSrc: "/images/marquee-figs.webp",
+    imageAlt: "傍晚暖光无花果与蜜桃静物",
+    canvasSelected: true,
+    generating: false,
+    durationMs: 1650,
+  },
+  // Round 3: Cursor clicks canvas -> requests oil-painting coastal variant -> lighthouse oil painting blooms
+  {
+    stageIndex: 2,
+    cursorX: 76,
+    cursorY: 40,
+    clicking: true,
+    ripple: true,
+    composerText: "",
+    userPrompt: "换成傍晚暖光，桌上有无花果和蜜桃",
+    agentReply: "暖光版本已放上画布，原版会一起留着。",
+    toolLabel: "改图 · −1 积分",
+    imageSrc: "/images/marquee-figs.webp",
+    imageAlt: "傍晚暖光无花果与蜜桃静物",
+    canvasSelected: true,
+    generating: false,
+    durationMs: 950,
+  },
+  {
+    stageIndex: 2,
+    cursorX: 46.1,
+    cursorY: 86.4,
+    clicking: true,
+    ripple: true,
+    composerText: "再出一张浅色油画风的海岸灯塔",
+    userPrompt: "再出一张浅色油画风的海岸灯塔",
+    agentReply: "正在绘制浅色油画笔触的新版本…",
+    toolLabel: "变体 · −1 积分",
+    imageSrc: "/images/marquee-figs.webp",
+    imageAlt: "傍晚暖光无花果与蜜桃静物",
+    canvasSelected: true,
+    generating: true,
+    durationMs: 950,
+  },
+  {
+    stageIndex: 2,
+    cursorX: 74,
+    cursorY: 44,
+    clicking: false,
+    ripple: false,
+    composerText: "",
+    userPrompt: "再出一张浅色油画风的海岸灯塔",
+    agentReply: "画好了，三张都保存在画布里随时切换。",
+    toolLabel: "变体 · −1 积分",
+    imageSrc: "/images/marquee-meadow.webp",
+    imageAlt: "浅色油画海岸灯塔",
+    canvasSelected: false,
+    generating: false,
+    durationMs: 2200,
+  },
+];
+
+const AGENT_STAGE_ITEMS = [
+  { num: "01", title: "说一句模糊想法", desc: "不用写长提示词，聊两句就出首图。", jumpFrame: 2 },
+  { num: "02", title: "点选画面继续改", desc: "在画布上点中任意一张，直接说哪里要调。", jumpFrame: 5 },
+  { num: "03", title: "批量出不同变体", desc: "同一构图快速试不同光线与风格，每步消耗透明。", jumpFrame: 8 },
 ] as const;
 
 export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
@@ -77,10 +276,14 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
   const [classicRatio, setClassicRatio] = useState<"1:1" | "4:5" | "16:9">("4:5");
   const [classicStyle, setClassicStyle] = useState<(typeof CLASSIC_STYLE_SAMPLES)[number]["id"]>("minimal");
   const [featureView, setFeatureView] = useState<"reference" | "prompt">("reference");
-  const [agentStep, setAgentStep] = useState<"v1" | "v2">("v1");
+  const [activeRefId, setActiveRefId] = useState<(typeof REFERENCE_SAMPLES)[number]["id"]>("window");
+  const [demoFrameIndex, setDemoFrameIndex] = useState(2);
+  const [demoPaused, setDemoPaused] = useState(false);
 
   const activeClassicSample =
     CLASSIC_STYLE_SAMPLES.find((item) => item.id === classicStyle) ?? CLASSIC_STYLE_SAMPLES[0];
+  const activeRefSample =
+    REFERENCE_SAMPLES.find((item) => item.id === activeRefId) ?? REFERENCE_SAMPLES[0];
 
   useEffect(() => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
@@ -114,6 +317,23 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
     return () => observer.disconnect();
   }, []);
 
+  // Auto-playing screen-recording loop for #agent (respects prefers-reduced-motion)
+  useEffect(() => {
+    if (demoPaused) return;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const currentFrame = AGENT_DEMO_FRAMES[demoFrameIndex] ?? AGENT_DEMO_FRAMES[0];
+    const timer = window.setTimeout(() => {
+      setDemoFrameIndex((prev) => (prev + 1) % AGENT_DEMO_FRAMES.length);
+    }, currentFrame.durationMs);
+
+    return () => window.clearTimeout(timer);
+  }, [demoFrameIndex, demoPaused]);
+
+  const demoFrame = AGENT_DEMO_FRAMES[demoFrameIndex] ?? AGENT_DEMO_FRAMES[0];
+
   return (
     <div className="min-h-screen overflow-x-clip bg-[#f6f3ea] text-[#171916]">
       {/* Translucent top navigation */}
@@ -146,7 +366,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             {isAuthenticated ? (
               <>
                 <Link
-                  className="hidden rounded-full border border-[#171916]/12 bg-[#fbf9f3]/80 px-3.5 py-2 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/25 hover:text-[#171916] sm:inline-flex"
+                  className="hidden rounded-full border border-[#171916]/15 bg-[#fbf9f3]/80 px-3.5 py-2 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/25 hover:text-[#171916] sm:inline-flex"
                   href="/history"
                 >
                   作品图库
@@ -167,7 +387,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
       </header>
 
       <main>
-        {/* 1. HERO STAGE */}
+        {/* 1. HERO — Full-bleed oil canvas + 3-row tilted continuous showcase + painterly foreground */}
         <section
           aria-labelledby="pix-hero-title"
           className="relative isolate flex flex-col justify-between overflow-hidden pt-[5.25rem] sm:pt-24"
@@ -205,8 +425,8 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
               <br className="sm:hidden" />
               到一张成品。
             </h1>
-            <p className="mx-auto mt-3.5 max-w-xl text-pretty text-sm leading-7 text-[#484e45] sm:text-base">
-              选好比例和风格就能出图；拿不准方向，直接和智能体聊。
+            <p className="mx-auto mt-3.5 max-w-xl text-balance text-sm leading-7 text-[#484e45] sm:text-base">
+              选好比例和风格就能出图，拿不准方向直接和智能体聊。
             </p>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -245,7 +465,6 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                     "linear-gradient(180deg, rgba(248,245,237,0.92) 0%, rgba(248,245,237,0.45) 48%, rgba(248,245,237,0) 100%)",
                 }}
               />
-
               <div
                 aria-hidden
                 className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 sm:w-20"
@@ -283,7 +502,7 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                             loading="eager"
                             className="object-cover transition duration-700 group-hover:scale-[1.04]"
                           />
-                          <figcaption className="pointer-events-none absolute inset-x-2.5 bottom-2.5 hidden items-center justify-between gap-2 rounded-full border border-white/60 bg-[#fbf9f3]/88 px-3 py-1 text-[11px] text-[#171916] opacity-0 backdrop-blur-md transition duration-300 sm:flex sm:group-hover:opacity-100">
+                          <figcaption className="pointer-events-none absolute inset-x-2.5 bottom-2.5 hidden items-center justify-between gap-2 rounded-full border border-white/60 bg-[#fbf9f3]/90 px-3 py-1 text-[11px] text-[#171916] opacity-0 backdrop-blur-md transition duration-300 sm:flex sm:group-hover:opacity-100">
                             <span className="font-medium">{card.tag}</span>
                             <span className="text-[#6d7368]">{card.style}</span>
                           </figcaption>
@@ -294,7 +513,6 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                 ))}
               </div>
 
-              {/* Light-Toned Oil Painting Foreground Depth Strip */}
               <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 select-none">
                 <Image
                   src="/images/oil-hero-fg.webp"
@@ -322,13 +540,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
           </div>
         </section>
 
-        {/* 2. FEATURES (#features) — Balanced Two-Card Grid + Archive Strip */}
+        {/* 2. FEATURES (#features) — Asymmetric Editorial Spread + Borderless Archive Strip */}
         <section id="features" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
           <div className="mx-auto max-w-6xl">
             <div data-reveal className="reveal flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">FEATURES</p>
-                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.65rem]">
+                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.75rem]">
                   少写提示词，多看成片。
                 </h2>
               </div>
@@ -337,61 +555,63 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
               </p>
             </div>
 
-            <div className="mt-10 grid gap-6 lg:grid-cols-2">
-              {/* Card 01: Interactive Visual Controls + Live Preview (zero hollow gap) */}
+            {/* Asymmetric editorial pair: narrow stacked studio plate (0.82fr) + wide reference showcase (1.18fr) */}
+            <div className="mt-12 grid gap-6 lg:grid-cols-[0.82fr_1.18fr] lg:items-stretch">
+              {/* 01 Classic Mode — Compact vertical specimen plate */}
               <article
                 data-reveal
-                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_22px_58px_rgba(23,25,22,0.055)] sm:p-7"
+                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_20px_54px_rgba(23,25,22,0.05)]"
               >
-                <div aria-hidden className="pointer-events-none absolute inset-0 -z-0 opacity-60">
+                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-55">
                   <Image
                     src="/images/oil-section-wash.webp"
                     alt=""
                     fill
-                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    sizes="(max-width: 1024px) 100vw, 40vw"
                     className="object-cover"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/72 via-[#fbf9f3]/86 to-[#fbf9f3]/96" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/70 via-[#fbf9f3]/90 to-[#fbf9f3]/95" />
                 </div>
 
-                <div className="relative z-10 grid gap-3.5 sm:grid-cols-[0.48fr_0.52fr] sm:items-stretch">
-                  {/* Left: Compact interactive ratio & style controls */}
-                  <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/92 p-3.5 shadow-[0_10px_28px_rgba(23,25,22,0.045)] backdrop-blur">
-                    <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="示例比例">
-                      {(
-                        [
-                          { ratio: "1:1", w: "w-4", h: "h-4" },
-                          { ratio: "4:5", w: "w-3.5", h: "h-4" },
-                          { ratio: "16:9", w: "w-5", h: "h-3" },
-                        ] as const
-                      ).map((item) => {
-                        const active = classicRatio === item.ratio;
-                        return (
-                          <button
-                            key={item.ratio}
-                            type="button"
-                            onClick={() => setClassicRatio(item.ratio)}
-                            aria-pressed={active}
-                            className={[
-                              "flex flex-col items-center justify-center rounded-xl border py-2.5 transition",
-                              active
-                                ? "border-[#171916] bg-[#171916] text-[#faf7ef]"
-                                : "border-[#171916]/10 bg-[#f4f0e5]/75 text-[#484e45] hover:border-[#171916]/25",
-                            ].join(" ")}
-                          >
-                            <span
-                              aria-hidden
-                              className={`mb-1.5 block rounded-[3px] border-[1.5px] ${item.w} ${item.h} ${
-                                active ? "border-[#faf7ef]/85" : "border-[#6d7368]/60"
+                <div className="relative z-10 space-y-3">
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] shadow-[0_12px_30px_rgba(23,25,22,0.07)]">
+                    <Image
+                      key={activeClassicSample.src}
+                      src={activeClassicSample.src}
+                      alt={activeClassicSample.alt}
+                      fill
+                      sizes="(max-width: 1024px) 100vw, 36vw"
+                      className="object-cover transition duration-500"
+                    />
+                  </div>
+
+                  {/* Interactive ratio & style bar — clean 2-row rhythm, zero orphan chips */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {(["1:1", "4:5", "16:9"] as const).map((ratio) => {
+                          const active = classicRatio === ratio;
+                          return (
+                            <button
+                              key={ratio}
+                              type="button"
+                              onClick={() => setClassicRatio(ratio)}
+                              aria-pressed={active}
+                              className={`rounded-full px-3 py-1 text-[11px] font-semibold tabular-nums transition ${
+                                active
+                                  ? "bg-[#171916] text-[#faf7ef]"
+                                  : "border border-[#171916]/15 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/30"
                               }`}
-                            />
-                            <span className="text-[11px] font-semibold tabular-nums">{item.ratio}</span>
-                          </button>
-                        );
-                      })}
+                            >
+                              {ratio}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <span className="text-[11px] text-[#6d7368]">点选切换预览</span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="示例风格">
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                       {CLASSIC_STYLE_SAMPLES.map((chip) => {
                         const active = classicStyle === chip.id;
                         return (
@@ -400,12 +620,11 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                             type="button"
                             onClick={() => setClassicStyle(chip.id)}
                             aria-pressed={active}
-                            className={[
-                              "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-left text-[11px] transition",
+                            className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-2 py-1 text-[11px] transition ${
                               active
-                                ? "border-[#566c58]/40 bg-[#e7eee5] font-semibold text-[#243426]"
-                                : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25",
-                            ].join(" ")}
+                                ? "border-[#566c58]/45 bg-[#e7eee5] font-semibold text-[#243426]"
+                                : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25"
+                            }`}
                           >
                             <span
                               aria-hidden
@@ -418,50 +637,38 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                       })}
                     </div>
                   </div>
-
-                  {/* Right: Live matching artwork preview */}
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] sm:aspect-auto sm:min-h-[196px]">
-                    <Image
-                      key={activeClassicSample.src}
-                      src={activeClassicSample.src}
-                      alt={activeClassicSample.alt}
-                      fill
-                      sizes="(max-width: 1024px) 100vw, 26vw"
-                      className="object-cover transition duration-500"
-                    />
-                  </div>
                 </div>
 
-                <div className="relative z-10 mt-6 border-t border-[#171916]/8 pt-5">
+                <div className="relative z-10 mt-5 border-t border-[#171916]/10 pt-4">
                   <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">01 · 经典模式</p>
                   <h3 className="mt-1.5 font-display text-2xl font-normal text-[#171916]">
                     先定方向，一次出图
                   </h3>
-                  <p className="mt-2 text-sm leading-6 text-[#484e45]">
-                    挑好比例、风格和留白，写清主体就行。
+                  <p className="mt-1.5 text-sm leading-6 text-[#484e45]">
+                    点选比例、风格和留白，写清主体就行。
                   </p>
                 </div>
               </article>
 
-              {/* Card 02: Reference Images — Matched Height & Visual Rhythm */}
+              {/* 02 Reference Images — Wide interactive showcase (all 3 reference thumbnails clickable!) */}
               <article
                 data-reveal
-                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_22px_58px_rgba(23,25,22,0.055)] sm:p-7"
+                className="reveal relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3] p-6 shadow-[0_20px_54px_rgba(23,25,22,0.05)]"
                 style={{ transitionDelay: "90ms" }}
               >
-                <div aria-hidden className="pointer-events-none absolute inset-0 -z-0 opacity-65">
+                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-65">
                   <Image
                     src="/images/oil-section-wash.webp"
                     alt=""
                     fill
-                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    sizes="(max-width: 1024px) 100vw, 55vw"
                     className="scale-x-[-1] object-cover"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/72 via-[#fbf9f3]/86 to-[#fbf9f3]/96" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/70 via-[#fbf9f3]/85 to-[#fbf9f3]/95" />
                 </div>
 
-                <div className="relative z-10 grid gap-3.5 sm:grid-cols-[0.44fr_0.56fr] sm:items-stretch">
-                  <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/92 p-3.5 shadow-[0_10px_28px_rgba(23,25,22,0.045)] backdrop-blur">
+                <div className="relative z-10 grid gap-4 sm:grid-cols-[0.42fr_0.58fr] sm:items-stretch">
+                  <div className="flex flex-col justify-between gap-3.5 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/90 p-4 backdrop-blur">
                     <div className="inline-flex w-full rounded-full border border-[#171916]/10 bg-[#f4f0e5]/90 p-0.5">
                       <button
                         type="button"
@@ -487,33 +694,39 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
 
                     {featureView === "reference" ? (
                       <>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {[
-                            { src: "/images/marquee-window.webp", alt: "参考图 1" },
-                            { src: "/images/marquee-figs.webp", alt: "参考图 2" },
-                            { src: "/images/marquee-meadow.webp", alt: "参考图 3" },
-                          ].map((ref) => (
-                            <div
-                              key={ref.src}
-                              className="relative aspect-square overflow-hidden rounded-xl border border-[#171916]/10 bg-[#eee9dc]"
-                            >
-                              <Image
-                                src={ref.src}
-                                alt={ref.alt}
-                                fill
-                                sizes="64px"
-                                loading="eager"
-                                className="object-cover"
-                              />
-                            </div>
-                          ))}
+                        <div className="grid grid-cols-3 gap-2" role="group" aria-label="切换参考图样例">
+                          {REFERENCE_SAMPLES.map((ref) => {
+                            const selected = activeRefId === ref.id;
+                            return (
+                              <button
+                                key={ref.id}
+                                type="button"
+                                onClick={() => setActiveRefId(ref.id)}
+                                aria-pressed={selected}
+                                aria-label={`选择${ref.alt}`}
+                                className={[
+                                  "relative aspect-square cursor-pointer overflow-hidden rounded-xl border-2 bg-[#eee9dc] transition duration-200 hover:scale-[1.04] active:scale-[0.97]",
+                                  selected
+                                    ? "border-[#171916] ring-2 ring-[#171916]/15 shadow-sm"
+                                    : "border-transparent opacity-75 hover:opacity-100",
+                                ].join(" ")}
+                              >
+                                <Image
+                                  src={ref.thumb}
+                                  alt={ref.alt}
+                                  fill
+                                  sizes="72px"
+                                  loading="eager"
+                                  className="object-cover"
+                                />
+                              </button>
+                            );
+                          })}
                         </div>
-                        <p className="text-xs leading-5 text-[#484e45]">
-                          照着参考图的色调与光线，换到窗边桌面。
-                        </p>
+                        <p className="text-xs leading-5 text-[#484e45]">{activeRefSample.note}</p>
                       </>
                     ) : (
-                      <div className="flex flex-1 flex-col justify-between gap-2.5 rounded-xl border border-[#171916]/8 bg-[#f4f0e5]/75 p-3">
+                      <div className="flex flex-1 flex-col justify-between gap-2.5 rounded-xl border border-[#171916]/10 bg-[#f4f0e5]/75 p-3">
                         <p className="text-xs leading-6 text-[#171916]">
                           巴黎街角书店橱窗，清晨阳光，水粉插画风。
                         </p>
@@ -529,210 +742,233 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                     )}
                   </div>
 
-                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] sm:aspect-auto sm:min-h-[196px]">
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc] shadow-[0_12px_30px_rgba(23,25,22,0.07)] sm:aspect-auto sm:min-h-[268px]">
                     <Image
-                      key={featureView}
-                      src={featureView === "reference" ? "/images/marquee-window.webp" : "/images/marquee-bookshop.webp"}
-                      alt={featureView === "reference" ? "带参考图生成效果" : "文字描述生成效果"}
+                      key={featureView === "reference" ? activeRefSample.result : "prompt-bookshop"}
+                      src={featureView === "reference" ? activeRefSample.result : "/images/marquee-bookshop.webp"}
+                      alt={featureView === "reference" ? activeRefSample.alt : "文字描述生成效果"}
                       fill
-                      sizes="(max-width: 1024px) 100vw, 28vw"
-                      className="object-cover transition duration-500"
+                      sizes="(max-width: 1024px) 100vw, 34vw"
+                      className="pix-canvas-bloom object-cover"
                     />
                   </div>
                 </div>
 
-                <div className="relative z-10 mt-6 border-t border-[#171916]/8 pt-5">
+                <div className="relative z-10 mt-5 border-t border-[#171916]/10 pt-4">
                   <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">02 · 参考图</p>
                   <h3 className="mt-1.5 font-display text-2xl font-normal text-[#171916]">
                     照着样图，接着出新图
                   </h3>
-                  <p className="mt-2 text-sm leading-6 text-[#484e45]">
-                    传本地图片或从历史里挑，每次最多带 3 张。
+                  <p className="mt-1.5 text-sm leading-6 text-[#484e45]">
+                    点上面 3 张参考图试试效果，实际创作支持本地上传或从历史带入。
                   </p>
                 </div>
               </article>
             </div>
 
-            {/* Card 03: Archive Reuse Strip */}
-            <article
+            {/* 03 Borderless Editorial Strip — breaks the card-box rhythm */}
+            <div
               data-reveal
-              className="reveal mt-6 grid gap-6 rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-6 shadow-[0_18px_46px_rgba(23,25,22,0.045)] sm:p-7 lg:grid-cols-[0.95fr_1.05fr] lg:items-center"
+              className="reveal mt-16 grid gap-8 border-t border-[#171916]/15 pt-12 lg:grid-cols-[0.78fr_1.22fr] lg:items-center"
             >
               <div>
-                <p className="font-display text-xs tracking-[0.2em] text-[#6d7368]">03 · 作品留存</p>
-                <h3 className="mt-1.5 font-display text-2xl font-normal text-[#171916]">
+                <p className="font-display text-xs tracking-[0.2em] text-[#566c58]">03 · 作品留存</p>
+                <h3 className="mt-2 font-display text-2xl font-normal text-[#171916] sm:text-3xl">
                   满意的图，随时接着改
                 </h3>
-                <p className="mt-2.5 max-w-md text-sm leading-7 text-[#484e45]">
-                  成片和提示词都会存进历史记录。想下载原图、复制描述，或设为参考图出下一版，点一下就行。
+                <p className="mt-3 max-w-sm text-sm leading-7 text-[#484e45]">
+                  成片和提示词都会存进历史记录。下载原图、复制描述，或设为参考图出下一版，点一下就行。
                 </p>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 items-end gap-4">
                 {[
-                  { src: "/images/marquee-kyoto.webp", alt: "京都庭院作品" },
-                  { src: "/images/marquee-riso.webp", alt: "植物版画作品" },
-                  { src: "/images/marquee-3d-bloom.webp", alt: "微缩樱花作品" },
+                  { src: "/images/marquee-kyoto.webp", alt: "京都庭院作品", aspect: "aspect-[4/3]" },
+                  { src: "/images/marquee-riso.webp", alt: "植物版画作品", aspect: "aspect-[5/4]" },
+                  { src: "/images/marquee-3d-bloom.webp", alt: "微缩樱花作品", aspect: "aspect-[4/3]" },
                 ].map((thumb) => (
                   <div
                     key={thumb.src}
-                    className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#eee9dc]"
+                    className={`group relative ${thumb.aspect} overflow-hidden rounded-2xl border border-white/80 bg-[#fbf9f3] p-1.5 shadow-[0_14px_34px_rgba(23,25,22,0.07)]`}
                   >
-                    <Image
-                      src={thumb.src}
-                      alt={thumb.alt}
-                      fill
-                      sizes="180px"
-                      className="object-cover transition duration-500 group-hover:scale-105"
-                    />
+                    <div className="relative h-full w-full overflow-hidden rounded-xl">
+                      <Image
+                        src={thumb.src}
+                        alt={thumb.alt}
+                        fill
+                        sizes="220px"
+                        className="object-cover transition duration-500 group-hover:scale-105"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
-            </article>
+            </div>
           </div>
         </section>
 
-        {/* 3. AGENT CONVERSATION WORKBENCH PREVIEW (#agent) */}
-        <section id="agent" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
+        {/* 3. AGENT (#agent) — Full-Bleed Tonal Studio Band + Autonomous Screen-Recording Demo */}
+        <section
+          id="agent"
+          className="relative z-10 w-full overflow-hidden border-y border-[#171916]/10 bg-[#ece7da] py-24 lg:py-28"
+        >
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-45">
+            <Image
+              src="/images/oil-section-wash.webp"
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-[#ece7da]/65 via-[#ece7da]/45 to-[#ece7da]/75" />
+          </div>
+
           <div
             data-reveal
-            className="reveal relative mx-auto max-w-6xl overflow-hidden rounded-[2.25rem] border border-[#171916]/10 bg-[#fbf9f3] shadow-[0_26px_74px_rgba(23,25,22,0.065)]"
+            className="reveal relative z-10 mx-auto grid max-w-6xl gap-10 px-6 lg:grid-cols-[0.74fr_1.26fr] lg:items-center lg:gap-12 lg:px-10"
           >
-            <div aria-hidden className="pointer-events-none absolute inset-0 opacity-60">
-              <Image
-                src="/images/oil-section-wash.webp"
-                alt=""
-                fill
-                sizes="100vw"
-                className="object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#fbf9f3]/94 via-[#fbf9f3]/86 to-[#fbf9f3]/72" />
+            <div>
+              <p className="flex items-center gap-2 font-display text-xs tracking-[0.2em] text-[#384a3a] uppercase">
+                <MessageSquareText size={15} aria-hidden />
+                智能体对话
+                <span className="rounded-full bg-[#384a3a] px-2.5 py-0.5 font-sans text-[10px] font-medium text-[#faf7ef]">
+                  会员专属
+                </span>
+              </p>
+              <h2 className="mt-4 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.35rem]">
+                说不清楚，
+                <br />
+                就聊清楚。
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-[#484e45]">
+                自动演示：从一句模糊描述出图，到点击画面选中继续改。
+              </p>
+
+              {/* Live 3-step ledger synced with autonomous screen recording */}
+              <ol className="mt-7 space-y-2">
+                {AGENT_STAGE_ITEMS.map((item, idx) => {
+                  const active = demoFrame.stageIndex === idx;
+                  return (
+                    <li key={item.num}>
+                      <button
+                        type="button"
+                        onClick={() => setDemoFrameIndex(item.jumpFrame)}
+                        className={[
+                          "flex w-full items-start gap-3.5 rounded-2xl border px-4 py-3 text-left transition",
+                          active
+                            ? "border-[#171916]/15 bg-[#fbf9f3]/95 shadow-[0_10px_28px_rgba(23,25,22,0.06)]"
+                            : "border-transparent bg-transparent opacity-70 hover:bg-[#fbf9f3]/50 hover:opacity-100",
+                        ].join(" ")}
+                      >
+                        <span
+                          className={`mt-0.5 font-mono text-xs font-semibold ${
+                            active ? "text-[#384a3a]" : "text-[#7c8276]"
+                          }`}
+                        >
+                          {item.num}
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-[#171916]">{item.title}</p>
+                          <p className="mt-0.5 text-xs leading-5 text-[#484e45]">{item.desc}</p>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
 
-            <div className="relative z-10 grid gap-10 p-6 sm:p-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:p-12">
-              <div>
-                <p className="flex items-center gap-2 font-display text-xs tracking-[0.2em] text-[#566c58] uppercase">
-                  <MessageSquareText size={15} aria-hidden />
-                  智能体对话
-                  <span className="rounded-full bg-[#384a3a] px-2.5 py-0.5 font-sans text-[10px] font-medium text-[#faf7ef]">
-                    会员专属
-                  </span>
-                </p>
-                <h2 className="mt-4 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.2rem] xl:text-[2.4rem]">
-                  说不清楚，就聊清楚。
-                </h2>
-                <p className="mt-4 text-sm leading-7 text-[#484e45]">
-                  只有个模糊想法也没关系。先聊两句定方向，出图后点选哪张就能继续改，每一步扣多少分都写清楚。
-                </p>
-
-                <div className="mt-7 inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#f4f0e5] p-1">
-                  <button
-                    type="button"
-                    onClick={() => setAgentStep("v1")}
-                    aria-pressed={agentStep === "v1"}
-                    className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
-                      agentStep === "v1" ? "bg-[#171916] text-[#faf7ef]" : "text-[#484e45] hover:text-[#171916]"
-                    }`}
-                  >
-                    第 1 轮 · 出首图
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentStep("v2")}
-                    aria-pressed={agentStep === "v2"}
-                    className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
-                      agentStep === "v2" ? "bg-[#171916] text-[#faf7ef]" : "text-[#484e45] hover:text-[#171916]"
-                    }`}
-                  >
-                    第 2 轮 · 接着改
-                  </button>
-                </div>
-              </div>
-
-              <AgentChatPreview
-                step={agentStep}
-                onToggle={() => setAgentStep((prev) => (prev === "v1" ? "v2" : "v1"))}
-              />
-            </div>
+            <AgentScreenRecording
+              frame={demoFrame}
+              paused={demoPaused}
+              onTogglePause={() => setDemoPaused((p) => !p)}
+            />
           </div>
         </section>
 
-        {/* 4. RECORDS METRICS (#records) — Illustrated Backdrop + Frosted Ledger Card */}
-        <section id="records" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
+        {/* 4. RECORDS (#records) — Full-Bleed Borderless Watercolor Panorama + Open Frosted Ledger */}
+        <section id="records" className="relative z-10 w-full overflow-hidden py-28 lg:py-36">
+          {/* Full-bleed illustrated backdrop melting smoothly into page canvas top & bottom */}
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            <Image
+              src="/images/oil-records-bg.webp"
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover object-left-bottom opacity-95"
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(246,243,234,0.96) 0%, rgba(246,243,234,0.18) 18%, rgba(246,243,234,0.14) 80%, rgba(246,243,234,0.98) 100%)",
+              }}
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(95deg, rgba(246,243,234,0.74) 0%, rgba(246,243,234,0.34) 44%, rgba(246,243,234,0.42) 100%)",
+              }}
+            />
+          </div>
+
           <div
             data-reveal
-            className="reveal relative mx-auto max-w-6xl overflow-hidden rounded-[2.25rem] border border-[#171916]/10 bg-[#fbf9f3] shadow-[0_24px_64px_rgba(23,25,22,0.06)]"
+            className="reveal relative z-10 mx-auto grid max-w-6xl gap-10 px-6 lg:grid-cols-[0.76fr_1.24fr] lg:items-center lg:gap-14 lg:px-10"
           >
-            {/* Light-toned editorial watercolor/gouache illustration backdrop */}
-            <div aria-hidden className="pointer-events-none absolute inset-0">
-              <Image
-                src="/images/oil-records-bg.webp"
-                alt=""
-                fill
-                sizes="100vw"
-                className="object-cover object-left-bottom opacity-90"
-              />
-              <div
-                className="absolute inset-0"
-                style={{
-                  background:
-                    "linear-gradient(105deg, rgba(251,249,243,0.78) 0%, rgba(251,249,243,0.52) 44%, rgba(251,249,243,0.34) 100%)",
-                }}
-              />
+            {/* Open typography sitting directly on the watercolor landscape */}
+            <div>
+              <p className="font-display text-xs tracking-[0.22em] text-[#384a3a] uppercase">RECORDS</p>
+              <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.6rem]">
+                用过的图，
+                <br />
+                都留着。
+              </h2>
+              <p className="mt-4 max-w-[16rem] text-sm leading-7 text-[#2d332a]">
+                每次成图都会记下参数与说明，需要时随时翻出来用。
+              </p>
+              <Link
+                className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#171916] px-5 py-2.5 text-xs font-medium text-[#faf7ef] shadow-[0_12px_28px_rgba(23,25,22,0.16)] transition hover:bg-[#2a2e28]"
+                href="/history"
+              >
+                打开历史记录
+                <ArrowRight size={14} aria-hidden />
+              </Link>
             </div>
 
-            <div className="relative z-10 grid gap-8 p-6 sm:p-10 lg:grid-cols-[0.76fr_1.24fr] lg:items-center lg:gap-12 lg:p-12">
-              {/* Left column: vertically centered cleanly over the illustration */}
-              <div className="lg:self-center">
-                <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">RECORDS</p>
-                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.5rem]">
-                  用过的图，都留着。
-                </h2>
-                <p className="mt-4 max-w-xs text-sm leading-7 text-[#484e45]">
-                  每次成图都会记下参数和说明，需要时随时翻出来用。
-                </p>
-                <Link
-                  className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#171916] px-5 py-2.5 text-xs font-medium text-[#faf7ef] shadow-[0_10px_24px_rgba(23,25,22,0.14)] transition hover:bg-[#2a2e28]"
-                  href="/history"
-                >
-                  打开历史记录
-                  <ArrowRight size={14} aria-hidden />
-                </Link>
-              </div>
-
-              {/* Right column: Frosted vellum ledger panel floating over illustration */}
-              <div className="rounded-[1.6rem] border border-white/80 bg-[#fbf9f3]/82 px-2 py-2 shadow-[0_20px_50px_rgba(23,25,22,0.08)] backdrop-blur-md sm:px-4">
-                <dl>
-                  {dataPoints.map((item, idx) => (
-                    <div
-                      key={item.label}
-                      className={[
-                        "grid grid-cols-[5.75rem_1fr] items-baseline gap-x-6 py-5 pl-4 sm:pl-8 lg:pl-14",
-                        idx > 0 ? "border-t border-[#171916]/10" : "",
-                      ].join(" ")}
-                    >
-                      <dt className="flex items-baseline gap-1.5 whitespace-nowrap tabular-nums">
-                        <span className="font-display text-[2.6rem] leading-none text-[#171916]">{item.value}</span>
-                        <span className="text-sm font-medium text-[#6d7368]">{item.unit}</span>
-                      </dt>
-                      <dd className="text-sm leading-6 text-[#484e45]">
-                        <span className="block text-base font-semibold text-[#171916]">{item.label}</span>
-                        {item.detail}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+            {/* Translucent frosted ledger floating over bright right watercolor sky — preserves OpenSpec indented fixed-width numeric column */}
+            <div className="rounded-[1.75rem] border border-white/80 bg-[#fbf9f3]/80 px-3 py-2 shadow-[0_22px_56px_rgba(23,25,22,0.08)] backdrop-blur-md sm:px-5">
+              <dl>
+                {dataPoints.map((item, idx) => (
+                  <div
+                    key={item.label}
+                    className={[
+                      "grid grid-cols-[5.75rem_1fr] items-baseline gap-x-6 py-5 pl-4 sm:pl-8 lg:pl-14",
+                      idx > 0 ? "border-t border-[#171916]/10" : "",
+                    ].join(" ")}
+                  >
+                    <dt className="flex items-baseline gap-1.5 whitespace-nowrap tabular-nums">
+                      <span className="font-display text-[2.6rem] leading-none text-[#171916]">{item.value}</span>
+                      <span className="text-sm font-medium text-[#6d7368]">{item.unit}</span>
+                    </dt>
+                    <dd className="text-sm leading-6 text-[#484e45]">
+                      <span className="block text-base font-semibold text-[#171916]">{item.label}</span>
+                      {item.detail}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           </div>
         </section>
 
-        {/* 5. PRICING (#pricing) */}
+        {/* 5. PRICING (#pricing) — Architectural 3-Column Table with High-Contrast Deep Pine Pro Column */}
         <section id="pricing" className="relative z-10 px-6 py-24 lg:px-10 lg:py-28">
           <div data-reveal className="reveal mx-auto max-w-6xl">
-            <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">PRICING</p>
-                <h2 className="mt-3 max-w-3xl font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.65rem]">
+                <h2 className="mt-3 font-display text-3xl font-normal leading-tight text-[#171916] sm:text-[2.75rem]">
                   一张图一分，先免费试。
                 </h2>
                 <p className="mt-3 max-w-md text-sm leading-7 text-[#484e45]">
@@ -752,53 +988,51 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
           </div>
         </section>
 
-        {/* 6. CLOSING CTA */}
-        <section className="relative z-10 px-6 pb-20 pt-8 lg:px-10 lg:pb-24">
-          <div
-            data-reveal
-            className="reveal relative mx-auto max-w-6xl overflow-hidden rounded-[2.25rem] border border-[#171916]/10 bg-[#fbf9f3] px-7 py-14 shadow-[0_24px_64px_rgba(23,25,22,0.055)] sm:px-12 sm:py-16"
-          >
-            <div aria-hidden className="pointer-events-none absolute inset-0">
-              <Image
-                src="/images/oil-section-wash.webp"
-                alt=""
-                fill
-                sizes="100vw"
-                className="object-cover opacity-80"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#fbf9f3]/86 via-[#fbf9f3]/70 to-[#fbf9f3]/55" />
-            </div>
+        {/* 6. CLOSING CTA — Borderless Centered Monograph Finale (no rounded box!) */}
+        <section className="relative z-10 overflow-hidden border-t border-[#171916]/10 px-6 py-28 text-center lg:px-10 lg:py-32">
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            <Image
+              src="/images/oil-section-wash.webp"
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover opacity-55"
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(246,243,234,0.9) 0%, rgba(246,243,234,0.52) 50%, rgba(242,238,226,0.92) 100%)",
+              }}
+            />
+          </div>
 
-            <div className="relative z-10 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
-              <div>
-                <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">START</p>
-                <h2 className="mt-3 max-w-2xl font-display text-3xl font-normal leading-tight text-[#171916] sm:text-5xl">
-                  第一张图，现在就能出。
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[#484e45]">
-                  登录后送 5 张免费额度，打开就能用。
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {isAuthenticated ? (
-                  <Link
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-7 py-3.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"
-                    href="/generate"
-                  >
-                    开始生成
-                    <ArrowRight size={16} aria-hidden />
-                  </Link>
-                ) : (
-                  <GoogleLoginButton className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-7 py-3.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]" />
-                )}
-              </div>
+          <div data-reveal className="reveal relative z-10 mx-auto max-w-2xl">
+            <p className="font-display text-xs tracking-[0.24em] text-[#566c58] uppercase">START</p>
+            <h2 className="mt-4 font-display text-4xl font-normal leading-tight text-[#171916] sm:text-5xl">
+              第一张图，现在就能出。
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-[#484e45]">
+              登录后送 5 张免费额度，打开就能用。
+            </p>
+            <div className="mt-8 flex justify-center">
+              {isAuthenticated ? (
+                <Link
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-8 py-3.5 text-sm font-medium text-[#faf7ef] shadow-[0_14px_34px_rgba(23,25,22,0.18)] transition hover:bg-[#2a2e28]"
+                  href="/generate"
+                >
+                  开始生成
+                  <ArrowRight size={16} aria-hidden />
+                </Link>
+              ) : (
+                <GoogleLoginButton className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-8 py-3.5 text-sm font-medium text-[#faf7ef] shadow-[0_14px_34px_rgba(23,25,22,0.18)] transition hover:bg-[#2a2e28]" />
+              )}
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-[#171916]/10 bg-[#f2eee2]/80 px-6 py-9 text-xs text-[#6d7368] lg:px-10">
+      <footer className="border-t border-[#171916]/10 bg-[#f2eee2] px-6 py-9 text-xs text-[#6d7368] lg:px-10">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
           <span className="font-display text-base tracking-[0.08em] text-[#171916]">PixGen</span>
           <div className="flex flex-wrap items-center gap-5">
@@ -821,125 +1055,177 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
   );
 }
 
-function AgentChatPreview({
-  step,
-  onToggle,
+function AgentScreenRecording({
+  frame,
+  paused,
+  onTogglePause,
 }: {
-  step: "v1" | "v2";
-  onToggle: () => void;
+  frame: DemoKeyframe;
+  paused: boolean;
+  onTogglePause: () => void;
 }) {
-  const [ripple, setRipple] = useState<{ id: number; x: number; y: number } | null>(null);
-
-  function handleImageClick(event: MouseEvent<HTMLButtonElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setRipple({
-      id: Date.now(),
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    });
-    onToggle();
-  }
-
   return (
-    <div className="relative">
-      <div
-        aria-hidden
-        className="absolute -right-2.5 -top-3 h-full w-full rotate-[1.4deg] rounded-[1.75rem] border border-[#171916]/10 bg-[#f4f0e5]/75"
-      />
+    <div
+      className="relative overflow-hidden rounded-[1.75rem] border border-[#171916]/15 bg-[#fbf9f3] shadow-[0_32px_80px_rgba(23,25,22,0.12)]"
+      aria-label="Agent 自动演示录屏"
+    >
+      {/* Window chrome */}
+      <div className="flex items-center justify-between border-b border-[#171916]/10 bg-[#f4f0e5]/95 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#c9a27c]/65" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#7c947d]/65" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#7d919d]/65" />
+          <p className="ml-2 text-xs font-medium text-[#484e45]">Agent 对话工作台</p>
+        </div>
+        <button
+          type="button"
+          onClick={onTogglePause}
+          aria-pressed={paused}
+          className="inline-flex items-center gap-1 rounded-full border border-[#171916]/10 bg-[#fbf9f3] px-2.5 py-1 text-[11px] font-medium text-[#484e45] transition hover:text-[#171916]"
+        >
+          {paused ? <Play size={10} aria-hidden /> : <Pause size={10} aria-hidden />}
+          <span>{paused ? "播放演示" : "演示中"}</span>
+        </button>
+      </div>
 
-      <div className="relative overflow-hidden rounded-[1.75rem] border border-[#171916]/12 bg-[#fbf9f3] shadow-[0_26px_64px_rgba(23,25,22,0.08)]">
-        <div className="flex items-center justify-between border-b border-[#171916]/8 bg-[#f4f0e5]/90 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#b48a52]/45" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#566c58]/45" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#596e7c]/45" />
-            <p className="ml-2 text-xs font-medium text-[#484e45]">Agent 对话</p>
+      {/* Simulated Interactive Stage + Floating Automated Mouse Cursor */}
+      <div className="relative grid gap-4 p-5 sm:grid-cols-[1.04fr_0.96fr] sm:items-stretch">
+        {/* Left: Chat & Composer */}
+        <div className="flex min-h-[275px] flex-col justify-between gap-4">
+          <div className="space-y-3">
+            {frame.userPrompt ? (
+              <div className="flex justify-end">
+                <div className="max-w-[92%] rounded-[1.15rem_1.15rem_4px_1.15rem] bg-[#171916] px-3.5 py-2.5 text-xs leading-6 text-[#faf7ef] transition">
+                  {frame.userPrompt}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <p className="font-display text-[11px] tracking-[0.2em] text-[#6d7368]">AGENT</p>
+              <div className="rounded-[4px_1.15rem_1.15rem_1.15rem] border border-[#171916]/10 bg-[#f4f0e5]/85 px-3.5 py-2.5 text-xs leading-6 text-[#171916]">
+                {frame.agentReply}
+              </div>
+
+              {frame.toolLabel ? (
+                <div className="flex flex-wrap gap-1.5 text-[11px] text-[#484e45]">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#566c58]/25 bg-[#e7eee5] px-2.5 py-1 text-[#2d3e2f]">
+                    {frame.generating ? (
+                      <Loader2 size={11} className="animate-spin text-[#384a3a]" aria-hidden />
+                    ) : (
+                      <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-[#384a3a] text-[8px] text-white">
+                        ✓
+                      </span>
+                    )}
+                    {frame.toolLabel}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Composer bar */}
+          <div
+            className={`flex items-center gap-2 rounded-full border px-3.5 py-2 transition ${
+              frame.composerText
+                ? "border-[#384a3a]/40 bg-[#fbf9f3]"
+                : "border-[#171916]/10 bg-[#f4f0e5]/80"
+            }`}
+          >
+            <span className="flex-1 truncate text-xs text-[#171916]">
+              {frame.composerText || <span className="text-[#92978b]">点选画布图片，继续说怎么改…</span>}
+              {frame.composerText ? (
+                <span className="flow-caret ml-0.5 inline-block h-3 w-[1.5px] bg-[#171916] align-middle" aria-hidden />
+              ) : null}
+            </span>
+            <span
+              className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#171916] text-[#faf7ef] transition ${
+                frame.clicking && frame.cursorX < 55 ? "scale-90 bg-[#384a3a]" : ""
+              }`}
+              aria-hidden
+            >
+              <Send size={12} />
+            </span>
           </div>
         </div>
 
-        <div className="grid gap-4 p-5 sm:grid-cols-[1.06fr_0.94fr] sm:items-stretch">
-          <div className="flex flex-col justify-between gap-4">
-            <div className="space-y-3">
-              <div className="flex justify-end">
-                <div className="max-w-[90%] rounded-[1.15rem_1.15rem_4px_1.15rem] bg-[#171916] px-3.5 py-2.5 text-xs leading-6 text-[#faf7ef]">
-                  {step === "v1"
-                    ? "想做张夏日海报，画面清爽一点"
-                    : "构图不错，把氛围换成暖一点的傍晚光"}
-                </div>
+        {/* Right: Artwork Canvas (no "图 1 · v1" labels) */}
+        <div className="flex flex-col justify-between rounded-2xl border border-[#171916]/10 bg-[#f2eee2]/85 p-3">
+          <div
+            className={[
+              "relative aspect-[4/3] w-full overflow-hidden rounded-xl border-2 bg-[#eee9dc] transition duration-300",
+              frame.canvasSelected
+                ? "border-[#384a3a] shadow-[0_0_0_3px_rgba(56,74,58,0.16)]"
+                : "border-[#171916]/10",
+            ].join(" ")}
+          >
+            <Image
+              key={frame.imageSrc}
+              src={frame.imageSrc}
+              alt={frame.imageAlt}
+              fill
+              sizes="(max-width: 1024px) 100vw, 32vw"
+              className="pix-canvas-bloom object-cover"
+            />
+
+            {frame.generating ? (
+              <div className="absolute inset-0 grid place-items-center bg-[#fbf9f3]/55 backdrop-blur-[2px]">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#171916]/85 px-3 py-1.5 text-[11px] font-medium text-[#faf7ef] shadow-sm">
+                  <Loader2 size={12} className="animate-spin" aria-hidden />
+                  生成中…
+                </span>
               </div>
+            ) : null}
 
-              <div className="space-y-2">
-                <p className="font-display text-[11px] tracking-[0.2em] text-[#6d7368]">AGENT</p>
-                <div className="rounded-[4px_1.15rem_1.15rem_1.15rem] border border-[#171916]/8 bg-[#f4f0e5]/85 px-3.5 py-2.5 text-xs leading-6 text-[#171916]">
-                  {step === "v1"
-                    ? "好，先按明亮自然光和干净构图出一版看看。"
-                    : "已经调暖了光线，原来的构图保留不动。"}
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 text-[11px] text-[#484e45]">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-[#566c58]/25 bg-[#e7eee5] px-2.5 py-1 text-[#2d3e2f]">
-                    <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-[#384a3a] text-[8px] text-white">
-                      ✓
-                    </span>
-                    {step === "v1" ? "生成图片 · −1 积分" : "改图 · −1 积分"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-full border border-[#171916]/10 bg-[#f4f0e5]/80 px-3.5 py-2">
-              <span className="flex-1 truncate text-xs text-[#6d7368]">
-                继续说一句“出两个配色变体”
-                <span className="flow-caret ml-0.5 inline-block h-3 w-[1.5px] bg-[#171916]/60 align-middle" aria-hidden />
+            {frame.canvasSelected && !frame.generating ? (
+              <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-[#384a3a]/90 px-2.5 py-0.5 text-[10px] font-medium text-[#faf7ef] backdrop-blur">
+                <Check size={10} strokeWidth={3} aria-hidden /> 已选中
               </span>
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#171916] text-[#faf7ef]" aria-hidden>
-                <Send size={12} />
-              </span>
-            </div>
+            ) : null}
           </div>
 
-          <div className="flex flex-col justify-between rounded-2xl border border-[#171916]/10 bg-[#f2eee2]/85 p-3">
-            <button
-              type="button"
-              onClick={handleImageClick}
-              aria-label="点击图片切换改图效果"
-              className="group relative aspect-[4/3] w-full cursor-pointer overflow-hidden rounded-xl border border-[#171916]/10 bg-[#eee9dc] text-left transition duration-300 hover:border-[#384a3a]/45 hover:shadow-[0_14px_30px_rgba(23,25,22,0.12)] active:scale-[0.97]"
+          <div className="mt-2.5 flex items-center justify-between text-[11px] text-[#6d7368]">
+            <span>历史版本自动保留</span>
+            <span className="font-medium text-[#384a3a]">
+              {frame.generating ? "正在更新画面" : frame.canvasSelected ? "已锁定修改对象" : "就绪"}
+            </span>
+          </div>
+        </div>
+
+        {/* Autonomous Simulated Mouse Cursor & Click Ripple (desktop/sm+) */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-20 hidden overflow-hidden sm:block"
+        >
+          {frame.ripple ? (
+            <span
+              key={`${frame.cursorX}-${frame.cursorY}-${frame.stageIndex}-${frame.generating}`}
+              className="pix-click-ripple absolute h-10 w-10 rounded-full border-2 border-[#384a3a] bg-[#384a3a]/20"
+              style={{ left: `${frame.cursorX}%`, top: `${frame.cursorY}%` }}
+            />
+          ) : null}
+
+          <div
+            className="absolute transition-[left,top] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{ left: `${frame.cursorX}%`, top: `${frame.cursorY}%` }}
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              className={`-ml-1 -mt-1 drop-shadow-[0_4px_8px_rgba(23,25,22,0.28)] transition-transform duration-150 ${
+                frame.clicking ? "scale-[0.85]" : "scale-100"
+              }`}
             >
-              <Image
-                key={step}
-                src={step === "v1" ? "/images/marquee-pool.webp" : "/images/marquee-figs.webp"}
-                alt={step === "v1" ? "智能体首轮出图示例" : "智能体改图结果示例"}
-                fill
-                sizes="(max-width: 1024px) 100vw, 28vw"
-                className="object-cover transition duration-500 group-hover:scale-[1.03]"
+              <path
+                d="M5.5 3.5L18.5 11.2L12.6 12.8L9.6 18.6L5.5 3.5Z"
+                fill="#171916"
+                stroke="#FAF7EF"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
               />
-
-              {/* Subtle animated click-cue pointer at bottom-right */}
-              <span
-                aria-hidden
-                className="pointer-events-none absolute bottom-2.5 right-2.5 flex items-center justify-center"
-              >
-                <span className="pix-cursor-ring absolute h-8 w-8 rounded-full border-2 border-[#fbf9f3]/90" />
-                <span className="pix-cursor-tap grid h-8 w-8 place-items-center rounded-full bg-[#171916]/75 text-[#faf7ef] shadow-md backdrop-blur-sm transition group-hover:bg-[#171916]">
-                  <MousePointerClick size={14} />
-                </span>
-              </span>
-
-              {/* Expanding radial click ripple at exact cursor click point */}
-              {ripple ? (
-                <span
-                  key={ripple.id}
-                  aria-hidden
-                  className="pix-click-ripple pointer-events-none absolute h-14 w-14 rounded-full border-2 border-[#fbf9f3] bg-[#fbf9f3]/35"
-                  style={{ left: ripple.x, top: ripple.y }}
-                />
-              ) : null}
-            </button>
-
-            <div className="mt-2.5 flex items-center justify-between text-[11px] text-[#6d7368]">
-              <span>原版本自动保留</span>
-              <span className="font-medium text-[#384a3a]">点击图片切换效果</span>
-            </div>
+            </svg>
           </div>
         </div>
       </div>
@@ -956,11 +1242,13 @@ function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
     "inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#171916]/15 bg-[#fbf9f3] px-5 py-3 text-sm font-medium text-[#171916] transition hover:border-[#171916]/35 hover:bg-[#f4f0e5]";
   const paidCtaClass =
     "inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#171916] px-5 py-3 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]";
+  const invertedCtaClass =
+    "inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#faf7ef] px-5 py-3 text-sm font-semibold text-[#171916] transition hover:bg-white";
 
   return (
-    <div className="mt-12 grid gap-6 lg:grid-cols-3">
-      {/* Free Tier */}
-      <div className="flex flex-col rounded-[1.85rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-7 shadow-[0_18px_48px_rgba(23,25,22,0.045)]">
+    <div className="mt-12 grid gap-6 lg:grid-cols-3 lg:items-stretch">
+      {/* Free Tier — Quiet open border */}
+      <div className="flex flex-col rounded-[1.75rem] border border-[#171916]/15 bg-transparent p-7">
         <p className="font-display text-xs tracking-[0.22em] text-[#6d7368]">FREE</p>
         <h3 className="mt-2 font-display text-2xl font-normal text-[#171916]">免费体验</h3>
         <p className="mt-4 font-display text-4xl font-normal tabular-nums text-[#171916]">¥0</p>
@@ -974,14 +1262,14 @@ function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
             <GoogleLoginButton className={freeCtaClass} />
           )}
         </div>
-        <ul className="mt-7 space-y-2.5 border-t border-[#171916]/8 pt-6 text-sm leading-6 text-[#484e45]">
+        <ul className="mt-7 space-y-2.5 border-t border-[#171916]/10 pt-6 text-sm leading-6 text-[#484e45]">
           <li>✓ 5 张一次性试用积分，不刷新</li>
           <li>✓ 经典生成模式与参考图</li>
           <li className="text-[#92978b]">✗ Agent 对话（会员专属）</li>
         </ul>
       </div>
 
-      {/* Paid Tiers */}
+      {/* Paid Tiers — Standard warm parchment + Pro inverted deep pine charcoal focus */}
       {pricingTiers.map((tier) => {
         const monthly = planForTier(tier.quota, 30);
         const yearly = planForTier(tier.quota, 365);
@@ -990,41 +1278,51 @@ function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
           return null;
         }
 
+        const isDarkFocus = tier.popular;
+
         return (
           <div
             key={tier.quota}
             className={[
-              "relative flex flex-col rounded-[1.85rem] border p-7 transition",
-              tier.popular
-                ? "border-[#566c58]/55 bg-[#fbf9f3] shadow-[0_24px_64px_rgba(56,74,58,0.11)]"
-                : "border-[#171916]/10 bg-[#fbf9f3]/92 shadow-[0_18px_48px_rgba(23,25,22,0.045)]",
+              "relative flex flex-col rounded-[1.75rem] border p-7 transition",
+              isDarkFocus
+                ? "border-[#1c221d] bg-[#1c221d] text-[#faf7ef] shadow-[0_28px_68px_rgba(23,25,22,0.2)]"
+                : "border-[#171916]/10 bg-[#fbf9f3] text-[#171916] shadow-[0_18px_46px_rgba(23,25,22,0.045)]",
             ].join(" ")}
           >
-            {tier.popular ? (
-              <span className="absolute -top-3 left-7 rounded-full bg-[#384a3a] px-3.5 py-1 text-[11px] font-medium tracking-wide text-[#faf7ef]">
+            {isDarkFocus ? (
+              <span className="absolute -top-3 left-7 rounded-full bg-[#b48a52] px-3.5 py-1 text-[11px] font-semibold tracking-wide text-[#faf7ef]">
                 推荐
               </span>
             ) : null}
-            <p className="font-display text-xs tracking-[0.22em] text-[#6d7368]">{tier.label.toUpperCase()}</p>
-            <h3 className="mt-2 font-display text-2xl font-normal text-[#171916]">{tier.title}</h3>
-            <p className="mt-4 font-display text-4xl font-normal tabular-nums text-[#171916]">
-              {formatFenAsCny(monthly.amountFen)}
-              <span className="ml-1 font-sans text-sm font-normal text-[#6d7368]">/月</span>
+            <p className={`font-display text-xs tracking-[0.22em] ${isDarkFocus ? "text-[#b6c3b5]" : "text-[#6d7368]"}`}>
+              {tier.label.toUpperCase()}
             </p>
-            <p className="mt-2 text-sm tabular-nums text-[#566c58]">
+            <h3 className="mt-2 font-display text-2xl font-normal">{tier.title}</h3>
+            <p className="mt-4 font-display text-4xl font-normal tabular-nums">
+              {formatFenAsCny(monthly.amountFen)}
+              <span className={`ml-1 font-sans text-sm font-normal ${isDarkFocus ? "text-[#b6c3b5]" : "text-[#6d7368]"}`}>
+                /月
+              </span>
+            </p>
+            <p className={`mt-2 text-sm tabular-nums ${isDarkFocus ? "text-[#d5b98b]" : "text-[#566c58]"}`}>
               年付 {formatFenAsCny(yearly.amountFen)}/年，省 {YEARLY_DISCOUNT_PERCENT}%
             </p>
             <div className="mt-7">
               {isAuthenticated ? (
-                <Link className={paidCtaClass} href="/upgrade">
+                <Link className={isDarkFocus ? invertedCtaClass : paidCtaClass} href="/upgrade">
                   前往升级页
                   <ArrowRight size={15} aria-hidden />
                 </Link>
               ) : (
-                <GoogleLoginButton next="/upgrade" className={paidCtaClass} />
+                <GoogleLoginButton next="/upgrade" className={isDarkFocus ? invertedCtaClass : paidCtaClass} />
               )}
             </div>
-            <ul className="mt-7 space-y-2.5 border-t border-[#171916]/8 pt-6 text-sm leading-6 text-[#484e45]">
+            <ul
+              className={`mt-7 space-y-2.5 border-t pt-6 text-sm leading-6 ${
+                isDarkFocus ? "border-white/15 text-[#dde3dc]" : "border-[#171916]/10 text-[#484e45]"
+              }`}
+            >
               <li>✓ 每期 {monthly.quotaPerTranche} 张生成额度</li>
               <li>✓ Agent 对话工作台（会员专属）</li>
               <li>✓ 订阅积分优先，永久积分兜底</li>
