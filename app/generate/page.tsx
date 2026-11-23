@@ -1,15 +1,13 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AgentWorkbench } from "@/components/agent-workbench";
-import { LogoutButton } from "@/components/auth-button";
-import { CreditBadge } from "@/components/credit-badge";
-import { MembershipNotice } from "@/components/membership-notice";
+import { AppShell } from "@/components/app-shell";
 import { GenerateModes } from "@/components/generate-modes";
 import { GenerationForm } from "@/components/generation-form";
-import { ensureUserProfile } from "@/lib/auth/ensure-profile";
+import { MembershipNotice } from "@/components/membership-notice";
 import { EMPTY_BALANCE, getCreditBalance } from "@/lib/auth/balance";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GenerateRequest } from "@/lib/validation/generate";
 
@@ -95,35 +93,27 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
   }
 
   return (
-    <main className="min-h-screen bg-[var(--page-bg)] px-6 py-6 text-[var(--ink)]">
-      <header className="mx-auto mb-8 flex max-w-6xl flex-wrap items-end justify-between gap-4 border-b border-black/10 pb-5">
-        <div>
-          <p className="font-display text-2xl tracking-[0.12em] text-black/40">STUDIO</p>
-          <h1 className="mt-2 text-4xl font-light tracking-[0.02em] text-black md:text-5xl">开始生成图片</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-black/58">两种方式，取决于你现在处于哪种状态：已经有想法，就从经典生成开始；还没有想法，就交给 Agent 聊出来。</p>
-        </div>
-        <nav className="flex flex-wrap items-center gap-3">
-          <CreditBadge balance={balance} />
-          <Link className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:border-black/25" href="/upgrade">
-            会员方案
-          </Link>
-          <Link className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black transition hover:border-black/20" href="/history">
-            历史记录
-          </Link>
-          <LogoutButton />
-        </nav>
-      </header>
-
-      <MembershipNotice balance={balance} />
-
-      <div className="mx-auto max-w-6xl">
+    <AppShell balance={balance} immersive>
+      <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4 lg:overflow-hidden lg:p-5">
+        <MembershipNotice balance={balance} compact />
         <GenerateModes
           initialMode={mode}
           membershipActive={balance.membershipActive}
-          classicForm={<GenerationForm credits={balance.totalCredits} initialValues={getInitialValues(resolvedSearchParams, useExample)} initialReference={initialReference} />}
-          agentWorkbench={<AgentWorkbench credits={balance.totalCredits} membershipActive={balance.membershipActive} />}
+          classicForm={
+            <GenerationForm
+              credits={balance.totalCredits}
+              initialValues={getInitialValues(resolvedSearchParams, useExample)}
+              initialReference={initialReference}
+            />
+          }
+          agentWorkbench={
+            <AgentWorkbench
+              credits={balance.totalCredits}
+              membershipActive={balance.membershipActive}
+            />
+          }
         />
-      </div>
-    </main>
+      </main>
+    </AppShell>
   );
 }

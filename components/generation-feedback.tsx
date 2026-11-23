@@ -10,10 +10,12 @@ export function GenerationFeedback({
   generationId,
   initialFeedback,
   regenerateHref,
+  compact = false,
 }: {
   generationId: string;
   initialFeedback: Feedback;
   regenerateHref?: string;
+  compact?: boolean;
 }) {
   const [feedback, setFeedback] = useState<Feedback>(initialFeedback);
   const [saving, setSaving] = useState(false);
@@ -40,18 +42,23 @@ export function GenerationFeedback({
     }
   }
 
+  const sizeClass = compact ? "px-3 py-1.5 text-xs" : "px-3.5 py-2 text-xs";
+
   return (
-    <div className="mt-4 flex flex-wrap gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
         disabled={saving}
         onClick={() => void updateFeedback("liked")}
         className={[
-          "inline-flex items-center gap-1 rounded-full border px-4 py-2 font-semibold transition disabled:opacity-60",
-          feedback === "liked" ? "border-black bg-black text-white" : "border-black/10 bg-white text-black hover:border-black/25",
+          "inline-flex items-center gap-1.5 rounded-full border font-medium transition disabled:opacity-60",
+          sizeClass,
+          feedback === "liked"
+            ? "border-[#384a3a] bg-[#384a3a] text-[#faf7ef]"
+            : "border-[#171916]/12 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25 hover:text-[#171916]",
         ].join(" ")}
       >
-        <ThumbsUp size={15} />
+        <ThumbsUp size={13} aria-hidden />
         满意
       </button>
       <button
@@ -59,16 +66,25 @@ export function GenerationFeedback({
         disabled={saving}
         onClick={() => void updateFeedback("disliked")}
         className={[
-          "inline-flex items-center gap-1 rounded-full border px-4 py-2 font-semibold transition disabled:opacity-60",
-          feedback === "disliked" ? "border-black bg-black text-white" : "border-black/10 bg-white text-black hover:border-black/25",
+          "inline-flex items-center gap-1.5 rounded-full border font-medium transition disabled:opacity-60",
+          sizeClass,
+          feedback === "disliked"
+            ? "border-[#171916] bg-[#171916] text-[#faf7ef]"
+            : "border-[#171916]/12 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25 hover:text-[#171916]",
         ].join(" ")}
       >
-        <ThumbsDown size={15} />
+        <ThumbsDown size={13} aria-hidden />
         不满意
       </button>
       {regenerateHref ? (
-        <Link className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-4 py-2 font-semibold text-black transition hover:border-black/25" href={regenerateHref}>
-          <RotateCw size={15} />
+        <Link
+          className={[
+            "inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#fbf9f3] font-medium text-[#484e45] transition hover:border-[#171916]/25 hover:text-[#171916]",
+            sizeClass,
+          ].join(" ")}
+          href={regenerateHref}
+        >
+          <RotateCw size={13} aria-hidden />
           重新生成
         </Link>
       ) : null}

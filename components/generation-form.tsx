@@ -1,14 +1,38 @@
 "use client";
 
-import { Clock3, Download, Loader2, Plus, Sparkles, X } from "lucide-react";
+import {
+  Check,
+  Clock3,
+  Copy,
+  Download,
+  FileText,
+  ImagePlus,
+  Loader2,
+  Maximize2,
+  RotateCw,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { DragEvent, FormEvent } from "react";
 import { GenerationFeedback } from "@/components/generation-feedback";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { compressImageToBase64, type ReferenceImageFile } from "@/lib/media/compress-image";
-import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
+import {
+  aspectRatios,
+  imageTypes,
+  scenes,
+  styles,
+  whitespaceOptions,
+  type AspectRatioId,
+  type ImageTypeId,
+  type SceneId,
+  type StyleId,
+  type WhitespaceId,
+} from "@/lib/prompts/options";
 import { REFERENCE_IMAGE_LIMITS } from "@/lib/validation/generate";
 import type { GenerateRequest } from "@/lib/validation/generate";
 
@@ -16,15 +40,48 @@ type GenerationResult = {
   generation: {
     id: string;
     image_url: string | null;
+    final_prompt?: string | null;
     feedback: "liked" | "disliked" | null;
   };
+  remainingCredits?: { totalCredits?: number } | null;
 };
 
 type GenerateError = {
   error: string;
 };
 
+type SessionArtwork = {
+  id: string;
+  imageUrl: string;
+  feedback: "liked" | "disliked" | null;
+  finalPrompt: string | null;
+  aspectRatioLabel: string;
+  styleLabel: string;
+};
+
 const REFERENCE_ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+const RATIO_META: Record<AspectRatioId, { boxClass: string; caption: string }> = {
+  square: { boxClass: "h-6 w-6", caption: "方图主图" },
+  portrait: { boxClass: "h-7 w-5", caption: "竖图封面" },
+  landscape: { boxClass: "h-4 w-7", caption: "宽幅海报" },
+};
+
+const STYLE_SWATCHES: Record<StyleId, [string, string]> = {
+  premium_minimal: ["#e9e4d7", "#7d887a"],
+  soft_realistic: ["#dcd6c8", "#a49174"],
+  vibrant_ad: ["#f0d8b2", "#c87a54"],
+  soft_3d: ["#d9e3e8", "#8aa2ae"],
+  editorial_illustration: ["#ead5cc", "#687c6c"],
+  luxury_commercial: ["#cbb389", "#373a34"],
+};
+
+const WHITESPACE_LAYOUT: Record<WhitespaceId, string> = {
+  balanced: "items-center justify-center",
+  top_space: "items-end justify-center pb-0.5",
+  left_space: "items-center justify-end pr-0.5",
+  right_space: "items-center justify-start pl-0.5",
+};
 
 export function GenerationForm({
   credits,
@@ -36,17 +93,33 @@ export function GenerationForm({
   initialReference?: { id: string; url: string };
 }) {
   const router = useRouter();
+  const [imageType, setImageType] = useState<ImageTypeId>(initialValues.imageType ?? "ecommerce_hero");
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioId>(initialValues.aspectRatio ?? "square");
+  const [style, setStyle] = useState<StyleId>(initialValues.style ?? "premium_minimal");
+  const [scene, setScene] = useState<SceneId>(initialValues.scene ?? "studio");
+  const [whitespace, setWhitespace] = useState<WhitespaceId>(initialValues.whitespace ?? "balanced");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [generationId, setGenerationId] = useState<string | null>(null);
-  const [generationFeedback, setGenerationFeedback] = useState<"liked" | "disliked" | null>(null);
+  const [liveCredits, setLiveCredits] = useState(credits);
+  const [artworks, setArtworks] = useState<SessionArtwork[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [references, setReferences] = useState<ReferenceImageFile[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultSectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    setLiveCredits(credits);
+  }, [credits]);
 
   useEffect(() => {
     if (!loading) {
@@ -60,6 +133,15 @@ export function GenerationForm({
 
     return () => window.clearInterval(timer);
   }, [loading]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightboxOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightboxOpen]);
 
   useEffect(() => {
     if (!initialReference) {
@@ -171,6 +253,14 @@ export function GenerationForm({
     }
   }
 
+  function onDropReferences(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragActive(false);
+    if (references.length < REFERENCE_IMAGE_LIMITS.maxCount && !referenceBusy) {
+      void addReferenceFiles(event.dataTransfer.files);
+    }
+  }
+
   function removeReference(id: string) {
     setReferences((current) => {
       const removed = current.find((reference) => reference.id === id);
@@ -199,7 +289,7 @@ export function GenerationForm({
       return;
     }
 
-    if (credits < 1) {
+    if (liveCredits < 1) {
       setError("insufficient_credits");
       return;
     }
@@ -207,12 +297,8 @@ export function GenerationForm({
     setLoading(true);
     setElapsedSeconds(0);
     setError(null);
-    setImageUrl(null);
-    setGenerationId(null);
-    setGenerationFeedback(null);
+    setShowPrompt(false);
 
-    // On narrow screens the result panel sits below the form; bring it into
-    // view so the loading state (and any later error) is visible right away.
     if (resultSectionRef.current && window.matchMedia("(max-width: 1023px)").matches) {
       resultSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -246,14 +332,32 @@ export function GenerationForm({
         return;
       }
 
-      if (!body || !("generation" in body)) {
+      if (!body || !("generation" in body) || !body.generation.image_url) {
         setError("generation_failed");
         return;
       }
 
-      setImageUrl(body.generation.image_url);
-      setGenerationId(body.generation.id);
-      setGenerationFeedback(body.generation.feedback);
+      const nextArtwork: SessionArtwork = {
+        id: body.generation.id,
+        imageUrl: body.generation.image_url,
+        feedback: body.generation.feedback,
+        finalPrompt: body.generation.final_prompt ?? null,
+        aspectRatioLabel: aspectRatios[aspectRatio].label,
+        styleLabel: styles[style].label,
+      };
+
+      setArtworks((prev) => {
+        const updated = [...prev, nextArtwork];
+        setActiveIdx(updated.length - 1);
+        return updated;
+      });
+
+      if (typeof body.remainingCredits?.totalCredits === "number") {
+        setLiveCredits(body.remainingCredits.totalCredits);
+      } else {
+        setLiveCredits((prev) => Math.max(0, prev - 1));
+      }
+
       router.refresh();
     } catch {
       setError("network_error");
@@ -262,79 +366,302 @@ export function GenerationForm({
     }
   }
 
+  const activeArtwork = artworks[Math.min(activeIdx, artworks.length - 1)] ?? null;
+
+  async function handleCopyPrompt() {
+    if (!activeArtwork?.finalPrompt) return;
+    await navigator.clipboard.writeText(activeArtwork.finalPrompt);
+    setCopiedPrompt(true);
+    window.setTimeout(() => setCopiedPrompt(false), 1800);
+  }
+
   return (
-    <div className="grid gap-8 lg:grid-cols-[430px_1fr]">
-      <form onSubmit={onSubmit} className="rounded-[2rem] border border-black/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur" aria-busy={loading}>
-        <div className="mb-6 border-b border-black/10 pb-5">
-          <p className="font-display text-2xl tracking-[0.12em] text-black/40">CREATE</p>
-          <h2 className="mt-2 text-3xl font-light text-black">告诉我们你想要什么</h2>
-          <p className="mt-2 text-sm leading-6 text-black/58">先选画面方向，再写下主体和细节。系统会帮你整理成更完整的图片说明。</p>
-        </div>
+    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[400px_1fr] xl:grid-cols-[424px_1fr] lg:overflow-hidden">
+      {/* LEFT PANEL: Scrollable visual parameter controls + sticky bottom submit bar */}
+      <form
+        ref={formRef}
+        onSubmit={onSubmit}
+        aria-busy={loading}
+        className="flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-[#171916]/10 bg-[#fbf9f3]/90 shadow-[0_18px_50px_rgba(23,25,22,0.045)] backdrop-blur-md"
+      >
+        {/* Hidden inputs keeping FormData payload 100% compatible with /api/generate */}
+        <input type="hidden" name="imageType" value={imageType} />
+        <input type="hidden" name="aspectRatio" value={aspectRatio} />
+        <input type="hidden" name="style" value={style} />
+        <input type="hidden" name="scene" value={scene} />
+        <input type="hidden" name="whitespace" value={whitespace} />
 
-        <div className="grid gap-4">
-          <SelectField name="imageType" label="图片用途" options={imageTypes} defaultValue={initialValues.imageType} />
-          <SelectField name="aspectRatio" label="画面比例" options={aspectRatios} defaultValue={initialValues.aspectRatio} />
-          <SelectField name="style" label="画面质感" options={styles} defaultValue={initialValues.style} />
-          <SelectField name="scene" label="场景" options={scenes} defaultValue={initialValues.scene} />
-          <SelectField name="whitespace" label="留白" options={whitespaceOptions} defaultValue={initialValues.whitespace} />
+        <div className="studio-scroll flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          <div className="border-b border-[#171916]/8 pb-4">
+            <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">CREATE</p>
+            <h2 className="mt-1 font-display text-2xl font-normal text-[#171916]">告诉我们你想要什么</h2>
+            <p className="mt-1.5 text-xs leading-5 text-[#6d7368]">
+              写下画面主体，点选下方可视化比例与风格卡，系统会自动补足构图与光线。
+            </p>
+          </div>
 
-          <label className="grid gap-2 text-sm font-semibold text-black">
-            主体描述
+          {/* 1. Primary Subject Input (top priority) */}
+          <label className="grid gap-2 text-xs font-semibold tracking-wide text-[#171916]">
+            <span>主体描述</span>
             <textarea
               name="subject"
               required
               minLength={2}
-              className="min-h-28 rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4 font-normal text-black outline-none transition placeholder:text-black/42 focus:border-black/30 focus:bg-white"
+              rows={3}
+              className="min-h-[88px] resize-none rounded-2xl border border-[#171916]/12 bg-[#f4f0e5]/75 p-3.5 text-sm font-normal leading-6 text-[#171916] outline-none transition placeholder:text-[#92978b] focus:border-[#566c58]/50 focus:bg-[#fbf9f3]"
               placeholder="例如：一瓶高端护肤精华，透明玻璃瓶，银色瓶盖"
               defaultValue={initialValues.subject}
             />
           </label>
+
+          {/* 2. Aspect Ratio Visual Wireframe Cards */}
           <div className="grid gap-2">
-            <span className="text-sm font-semibold text-black">参考与补充</span>
-            <div className="grid gap-4 rounded-[1.25rem] border border-black/10 bg-[#f8faf7] p-4">
+            <span className="text-xs font-semibold tracking-wide text-[#171916]">画面比例</span>
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="画面比例">
+              {(Object.entries(aspectRatios) as [AspectRatioId, (typeof aspectRatios)[AspectRatioId]][]).map(
+                ([value, option]) => {
+                  const active = aspectRatio === value;
+                  const meta = RATIO_META[value];
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setAspectRatio(value)}
+                      className={[
+                        "flex flex-col items-center justify-center rounded-2xl border px-2 py-3 transition",
+                        active
+                          ? "border-[#171916] bg-[#171916] text-[#faf7ef] shadow-[0_8px_20px_rgba(23,25,22,0.14)]"
+                          : "border-[#171916]/10 bg-[#f4f0e5]/65 text-[#484e45] hover:border-[#171916]/25 hover:bg-[#fbf9f3]",
+                      ].join(" ")}
+                    >
+                      <span
+                        aria-hidden
+                        className={`mb-2 block rounded-[4px] border-[1.5px] ${meta.boxClass} ${
+                          active ? "border-[#faf7ef]/85 bg-white/10" : "border-[#6d7368]/60 bg-[#fbf9f3]"
+                        }`}
+                      />
+                      <span className="text-xs font-semibold tabular-nums">{option.label}</span>
+                      <span className={`mt-0.5 text-[10px] ${active ? "text-[#faf7ef]/70" : "text-[#6d7368]"}`}>
+                        {meta.caption}
+                      </span>
+                    </button>
+                  );
+                },
+              )}
+            </div>
+          </div>
+
+          {/* 3. Image Type Chips */}
+          <div className="grid gap-2">
+            <span className="text-xs font-semibold tracking-wide text-[#171916]">图片用途</span>
+            <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="图片用途">
+              {(Object.entries(imageTypes) as [ImageTypeId, (typeof imageTypes)[ImageTypeId]][]).map(
+                ([value, option]) => {
+                  const active = imageType === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setImageType(value)}
+                      className={[
+                        "rounded-xl border px-2.5 py-2 text-center text-xs transition",
+                        active
+                          ? "border-[#384a3a] bg-[#e7eee5] font-semibold text-[#243426]"
+                          : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25 hover:text-[#171916]",
+                      ].join(" ")}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+          </div>
+
+          {/* 4. Visual Style Swatch Cards */}
+          <div className="grid gap-2">
+            <span className="text-xs font-semibold tracking-wide text-[#171916]">画面质感</span>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="画面质感">
+              {(Object.entries(styles) as [StyleId, (typeof styles)[StyleId]][]).map(([value, option]) => {
+                const active = style === value;
+                const [sw1, sw2] = STYLE_SWATCHES[value];
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setStyle(value)}
+                    className={[
+                      "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs transition",
+                      active
+                        ? "border-[#171916] bg-[#171916] font-medium text-[#faf7ef]"
+                        : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25 hover:text-[#171916]",
+                    ].join(" ")}
+                  >
+                    <span className="flex shrink-0 -space-x-1" aria-hidden>
+                      <span className="h-3.5 w-3.5 rounded-full border border-white/60" style={{ backgroundColor: sw1 }} />
+                      <span className="h-3.5 w-3.5 rounded-full border border-white/60" style={{ backgroundColor: sw2 }} />
+                    </span>
+                    <span className="truncate">{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 5. Scene & Whitespace Compact Selectors */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="grid gap-2">
+              <span className="text-xs font-semibold tracking-wide text-[#171916]">场景氛围</span>
+              <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-[#171916]/10 bg-[#f4f0e5]/80 p-1" role="radiogroup" aria-label="场景氛围">
+                {(Object.entries(scenes) as [SceneId, (typeof scenes)[SceneId]][]).map(([value, option]) => {
+                  const active = scene === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setScene(value)}
+                      className={[
+                        "rounded-xl py-1.5 text-xs transition",
+                        active
+                          ? "bg-[#fbf9f3] font-semibold text-[#171916] shadow-[0_2px_8px_rgba(23,25,22,0.08)]"
+                          : "text-[#6d7368] hover:text-[#171916]",
+                      ].join(" ")}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <span className="text-xs font-semibold tracking-wide text-[#171916]">留白构图</span>
+              <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="留白构图">
+                {(Object.entries(whitespaceOptions) as [WhitespaceId, (typeof whitespaceOptions)[WhitespaceId]][]).map(
+                  ([value, option]) => {
+                    const active = whitespace === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setWhitespace(value)}
+                        className={[
+                          "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs transition",
+                          active
+                            ? "border-[#384a3a] bg-[#e7eee5] font-semibold text-[#243426]"
+                            : "border-[#171916]/10 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/25",
+                        ].join(" ")}
+                      >
+                        <span
+                          aria-hidden
+                          className={`flex h-4 w-5 shrink-0 rounded-[3px] border ${WHITESPACE_LAYOUT[value]} ${
+                            active ? "border-[#384a3a]/45 bg-[#fbf9f3]" : "border-[#171916]/15 bg-[#f4f0e5]"
+                          }`}
+                        >
+                          <span className={`h-1.5 w-2 rounded-[1px] ${active ? "bg-[#384a3a]" : "bg-[#92978b]"}`} />
+                        </span>
+                        <span>{option.label}</span>
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 6. Reference Images & Supplementary Notes ("参考与补充") */}
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold tracking-wide text-[#171916]">参考与补充</span>
+              <span className="text-[11px] tabular-nums text-[#6d7368]">
+                {references.length} / {REFERENCE_IMAGE_LIMITS.maxCount} 张参考图
+              </span>
+            </div>
+
+            <div
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={onDropReferences}
+              className={[
+                "grid gap-3.5 rounded-2xl border p-3.5 transition",
+                dragActive
+                  ? "border-[#566c58] bg-[#e7eee5]/65"
+                  : "border-[#171916]/10 bg-[#f4f0e5]/65",
+              ].join(" ")}
+            >
               <div className="grid gap-2">
-                <span className="text-[13px] font-semibold text-black/55">参考图（最多 {REFERENCE_IMAGE_LIMITS.maxCount} 张）</span>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
                   {references.map((reference) => (
                     <div key={reference.id} className="relative">
                       {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview; no remote optimization needed */}
-                      <img src={reference.previewUrl} alt="参考图" className="h-16 w-16 rounded-[0.75rem] border border-black/10 bg-white object-cover" />
+                      <img
+                        src={reference.previewUrl}
+                        alt="参考图"
+                        className="h-16 w-16 rounded-xl border border-[#171916]/12 bg-[#fbf9f3] object-cover"
+                      />
                       <button
                         type="button"
                         onClick={() => removeReference(reference.id)}
                         aria-label="移除参考图"
-                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black text-white transition hover:bg-black/85"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[#171916] text-[#faf7ef] shadow transition hover:bg-[#2a2e28]"
                       >
                         <X size={11} />
                       </button>
                     </div>
                   ))}
+
                   {references.length < REFERENCE_IMAGE_LIMITS.maxCount ? (
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={referenceBusy}
-                      className="grid h-16 w-16 place-items-center rounded-[0.75rem] border border-dashed border-black/20 bg-white/70 text-black/40 transition hover:border-black/40 hover:text-black/70 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex h-16 flex-1 min-w-[132px] items-center justify-center gap-2 rounded-xl border border-dashed border-[#171916]/20 bg-[#fbf9f3]/80 px-3 text-xs text-[#6d7368] transition hover:border-[#566c58]/50 hover:text-[#171916] disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {referenceBusy ? <Loader2 className="animate-spin" size={16} /> : <Plus size={18} />}
+                      {referenceBusy ? (
+                        <Loader2 className="animate-spin" size={15} />
+                      ) : (
+                        <>
+                          <Upload size={14} aria-hidden />
+                          <span>上传或拖入参考图</span>
+                        </>
+                      )}
                     </button>
                   ) : null}
                 </div>
+
                 {references.length >= REFERENCE_IMAGE_LIMITS.maxCount ? (
-                  <p className="text-xs text-black/45">已达 {REFERENCE_IMAGE_LIMITS.maxCount} 张上限</p>
+                  <p className="text-xs font-medium text-[#8a6a3f]">
+                    已达 {REFERENCE_IMAGE_LIMITS.maxCount} 张上限
+                  </p>
                 ) : null}
-                {referenceError ? <p className="text-xs text-black/62">{referenceError}</p> : null}
+                {referenceError ? <p className="text-xs text-[#8f3b2e]">{referenceError}</p> : null}
               </div>
-              <label className="grid gap-2 text-[13px] font-semibold text-black/55">
-                补充说明
+
+              <label className="grid gap-1.5 text-xs font-medium text-[#484e45]">
+                <span>补充说明（可选）</span>
                 <textarea
                   name="extra"
-                  className="min-h-20 rounded-[1rem] border border-black/10 bg-white p-3.5 text-sm font-normal text-black outline-none transition placeholder:text-black/42 focus:border-black/30"
+                  rows={2}
+                  className="min-h-[68px] resize-none rounded-xl border border-[#171916]/10 bg-[#fbf9f3] p-3 text-xs font-normal leading-5 text-[#171916] outline-none transition placeholder:text-[#92978b] focus:border-[#566c58]/45"
                   placeholder="例如：背景干净，适合广告图，顶部留出标题空间"
                   defaultValue={initialValues.extra}
                 />
               </label>
             </div>
+
             <input
               ref={fileInputRef}
               type="file"
@@ -346,75 +673,254 @@ export function GenerationForm({
           </div>
         </div>
 
-        <button
-          disabled={loading || credits < 1}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-black px-5 py-3.5 font-semibold text-white transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          {loading ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-          {loading ? "正在生成图片" : "生成图片"}
-        </button>
+        {/* Sticky Bottom Submit Action Bar */}
+        <div className="border-t border-[#171916]/8 bg-[#f4f0e5]/92 px-5 py-3.5 backdrop-blur">
+          <div className="mb-2 flex items-center justify-between text-[11px] tabular-nums text-[#6d7368]">
+            <span>
+              {aspectRatios[aspectRatio].label} · {styles[style].label} · {scenes[scene].label}
+            </span>
+            <span>本次消耗 1 积分（余 {liveCredits}）</span>
+          </div>
+          <button
+            type="submit"
+            disabled={loading || liveCredits < 1}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#171916] px-5 py-3 text-sm font-medium text-[#faf7ef] shadow-[0_12px_28px_rgba(23,25,22,0.16)] transition hover:bg-[#2a2e28] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {loading ? <Loader2 className="animate-spin" size={16} aria-hidden /> : <Sparkles size={16} aria-hidden />}
+            {loading ? "正在生成图片" : "生成图片"}
+          </button>
+        </div>
       </form>
 
-      <section ref={resultSectionRef} className="flex min-h-[620px] flex-col rounded-[2rem] border border-black/10 bg-white/78 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.045)] backdrop-blur">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-5">
-          <div>
-            <p className="font-display text-2xl tracking-[0.12em] text-black/40">PREVIEW</p>
-            <h2 className="mt-2 text-3xl font-light text-black">图片结果</h2>
+      {/* RIGHT PANEL: Full-Height Light-Linen Gallery Canvas Stage + Session Filmstrip */}
+      <section
+        ref={resultSectionRef}
+        className="flex min-h-[520px] flex-col overflow-hidden rounded-[1.75rem] border border-[#171916]/10 bg-[#fbf9f3]/82 p-4 shadow-[0_18px_50px_rgba(23,25,22,0.045)] backdrop-blur-md lg:min-h-0 lg:p-5"
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#171916]/8 pb-3">
+          <div className="flex items-baseline gap-2.5">
+            <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">CANVAS</p>
+            <h2 className="font-display text-lg font-normal text-[#171916]">商业画布</h2>
           </div>
-          <p className="text-sm text-black/52">成功生成后扣 1 积分</p>
+          <p className="text-xs text-[#6d7368]">成功生成后扣 1 积分 · 失败自动不扣费</p>
         </div>
 
-        {credits < 1 || error === "insufficient_credits" ? <UpgradePrompt /> : null}
+        {liveCredits < 1 || error === "insufficient_credits" ? <UpgradePrompt /> : null}
         {error && error !== "insufficient_credits" ? (
-          <p className="mb-5 rounded-[1.25rem] border border-black/10 bg-white p-4 text-sm text-black/72">{getErrorMessage(error)}</p>
+          <p className="mb-3 rounded-2xl border border-[#b45340]/25 bg-[#fdf3f0] px-4 py-3 text-xs text-[#8a3222]">
+            {getErrorMessage(error)}
+          </p>
         ) : null}
 
-        {loading ? (
-          <div className="grid min-h-[470px] flex-1 place-items-center rounded-[1.5rem] border border-black/10 bg-[#f8faf7] text-center">
-            <div className="w-full max-w-sm px-6">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-full border border-black/10 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.06)]">
-                <Loader2 className="animate-spin" size={24} />
+        {/* Main Canvas Viewport */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {loading ? (
+            <div className="relative grid min-h-[380px] flex-1 place-items-center overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f2eee2]">
+              <Image
+                src="/images/oil-section-wash.webp"
+                alt=""
+                fill
+                sizes="60vw"
+                className="oil-breathe object-cover opacity-75"
+              />
+              <div className="relative z-10 w-full max-w-sm rounded-[1.75rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-7 text-center shadow-[0_20px_50px_rgba(23,25,22,0.08)] backdrop-blur-md">
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-[#566c58]/25 bg-[#e7eee5] text-[#384a3a]">
+                  <Loader2 className="animate-spin" size={22} aria-hidden />
+                </div>
+                <h3 className="mt-5 font-display text-2xl font-normal text-[#171916]">正在绘制商业成片</h3>
+                <p className="mt-2 text-xs leading-6 text-[#484e45]">
+                  正在融合构图比例、材质光影与留白层次，请保持当前页面打开。
+                </p>
+                <div className="mt-5 h-1 overflow-hidden rounded-full bg-[#171916]/8">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-[#566c58]" />
+                </div>
+                <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#171916]/10 bg-[#f4f0e5] px-3.5 py-1.5 text-xs tabular-nums text-[#484e45]">
+                  <Clock3 size={13} aria-hidden />
+                  已等待 {elapsedSeconds} 秒
+                </div>
               </div>
-              <h3 className="mt-6 text-3xl font-light text-black">正在生成图片</h3>
-              <p className="mt-3 text-sm leading-6 text-black/58">高质量图片通常需要一点时间。请保持页面打开，完成后会自动显示在这里。</p>
+            </div>
+          ) : activeArtwork ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              {/* Framed Result Artwork */}
+              <div className="relative grid min-h-[340px] flex-1 place-items-center overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f1ede2]/90 p-4">
+                <button
+                  type="button"
+                  onClick={() => setLightboxOpen(true)}
+                  className="group relative flex max-h-full max-w-full items-center justify-center focus:outline-none"
+                  aria-label="放大查看生成图片"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- dynamic Supabase/mock image adapts naturally to aspect ratio */}
+                  <img
+                    src={activeArtwork.imageUrl}
+                    alt="生成图片结果"
+                    className="max-h-[56vh] w-auto max-w-full rounded-xl border border-[#171916]/10 bg-[#fbf9f3] object-contain shadow-[0_20px_50px_rgba(23,25,22,0.12)] transition duration-300 group-hover:scale-[1.01] lg:max-h-[calc(100vh-20.5rem)]"
+                  />
+                  <span className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-[#171916]/72 px-2.5 py-1 text-[11px] text-[#faf7ef] opacity-0 backdrop-blur transition group-hover:opacity-100">
+                    <Maximize2 size={11} aria-hidden /> 灯箱查看
+                  </span>
+                </button>
+              </div>
 
-              <div className="mt-7 h-px overflow-hidden bg-black/10">
-                <div className="h-full w-2/3 animate-pulse bg-black" />
+              {/* Action Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#171916]/8 bg-[#f4f0e5]/75 px-3.5 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLightboxOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#fbf9f3] px-3 py-1.5 text-xs font-medium text-[#171916] transition hover:border-[#171916]/30"
+                  >
+                    <Maximize2 size={13} aria-hidden />
+                    放大查看
+                  </button>
+                  <a
+                    href={activeArtwork.imageUrl}
+                    download
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#171916] px-3.5 py-1.5 text-xs font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"
+                  >
+                    <Download size={13} aria-hidden />
+                    下载原图
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => formRef.current?.requestSubmit()}
+                    disabled={loading || liveCredits < 1}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#fbf9f3] px-3 py-1.5 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/30 hover:text-[#171916] disabled:opacity-45"
+                  >
+                    <RotateCw size={13} aria-hidden />
+                    重新生成
+                  </button>
+                  {activeArtwork.finalPrompt ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyPrompt()}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#fbf9f3] px-3 py-1.5 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/30 hover:text-[#171916]"
+                      >
+                        {copiedPrompt ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+                        {copiedPrompt ? "已复制提示词" : "复制提示词"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowPrompt((v) => !v)}
+                        aria-expanded={showPrompt}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#fbf9f3] px-3 py-1.5 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/30 hover:text-[#171916]"
+                      >
+                        <FileText size={13} aria-hidden />
+                        {showPrompt ? "收起 Prompt" : "查看 Prompt"}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+
+                <GenerationFeedback
+                  key={activeArtwork.id}
+                  generationId={activeArtwork.id}
+                  initialFeedback={activeArtwork.feedback}
+                  compact
+                />
               </div>
 
-              <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-sm text-black/62">
-                <Clock3 size={16} />
-                已等待 {elapsedSeconds} 秒
+              {showPrompt && activeArtwork.finalPrompt ? (
+                <div className="max-h-28 overflow-y-auto rounded-xl border border-[#171916]/10 bg-[#fbf9f3] px-3.5 py-2.5 font-mono text-[11px] leading-5 text-[#484e45]">
+                  {activeArtwork.finalPrompt}
+                </div>
+              ) : null}
+
+              {/* Session Filmstrip */}
+              {artworks.length > 1 ? (
+                <div className="flex items-center gap-2 overflow-x-auto pb-0.5 pt-0.5">
+                  <span className="shrink-0 text-[11px] font-medium text-[#6d7368]">本次成片</span>
+                  {artworks.map((item, idx) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveIdx(idx)}
+                      className={[
+                        "relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border-2 transition",
+                        idx === activeIdx
+                          ? "border-[#171916] shadow-sm"
+                          : "border-transparent opacity-70 hover:opacity-100",
+                      ].join(" ")}
+                      aria-label={`切换到第 ${idx + 1} 张会话结果`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.imageUrl}
+                        alt={`会话缩略图 ${idx + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="relative grid min-h-[380px] flex-1 place-items-center overflow-hidden rounded-2xl border border-dashed border-[#171916]/15 bg-[#f2eee2]/85 p-6 text-center">
+              <Image
+                src="/images/oil-section-wash.webp"
+                alt=""
+                fill
+                sizes="60vw"
+                className="object-cover opacity-45"
+              />
+              <div className="relative z-10 max-w-sm rounded-[1.75rem] border border-[#171916]/8 bg-[#fbf9f3]/86 px-7 py-8 shadow-[0_14px_38px_rgba(23,25,22,0.05)] backdrop-blur-md">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-[#566c58]/20 bg-[#e7eee5] text-[#384a3a]">
+                  <ImagePlus size={20} aria-hidden />
+                </div>
+                <p className="mt-4 font-display text-xs tracking-[0.24em] text-[#6d7368] uppercase">ATELIER STAGE</p>
+                <p className="mt-2 font-display text-xl font-normal text-[#171916]">生成结果会显示在这里</p>
+                <p className="mt-2 text-xs leading-6 text-[#484e45]">
+                  在左侧写下主体、点选比例与画面质感，点击「生成图片」即可在浅亚麻画布上实时呈现高清成片。
+                </p>
               </div>
             </div>
-          </div>
-        ) : imageUrl ? (
-          <div>
-            <div className="rounded-[1.5rem] border border-black/10 bg-[#f8faf7] p-4">
-              <Image className="h-auto w-full rounded-[1rem] border border-black/10 object-cover" src={imageUrl} alt="生成图片结果" width={1024} height={1024} />
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <a
-                href={imageUrl}
-                download
-                className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-black/90"
-              >
-                <Download size={16} />
-                下载图片
-              </a>
-              {generationId ? <GenerationFeedback generationId={generationId} initialFeedback={generationFeedback} /> : null}
-            </div>
-          </div>
-        ) : (
-          <div className="grid min-h-[470px] flex-1 place-items-center rounded-[1.5rem] border border-dashed border-black/15 bg-[#f8faf7] text-center">
-            <div className="max-w-sm px-6">
-              <p className="font-display text-3xl tracking-[0.12em] text-black/36">EMPTY</p>
-              <p className="mt-4 text-lg font-light text-black">生成结果会显示在这里</p>
-              <p className="mt-2 text-sm leading-6 text-black/52">填写左侧内容后，点击生成图片开始创作。</p>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </section>
+
+      {/* Lightbox Modal */}
+      {lightboxOpen && activeArtwork ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#171916]/80 p-4 backdrop-blur-md sm:p-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label="高清大图预览"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <div
+            className="relative flex max-h-[92vh] max-w-5xl flex-col items-center gap-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              aria-label="关闭大图预览"
+              className="absolute -top-2 right-0 grid h-9 w-9 place-items-center rounded-full bg-[#fbf9f3] text-[#171916] shadow-lg transition hover:bg-white"
+            >
+              <X size={18} aria-hidden />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={activeArtwork.imageUrl}
+              alt="高清成片大图"
+              className="mt-8 max-h-[78vh] w-auto max-w-full rounded-2xl border border-white/15 bg-[#fbf9f3] object-contain shadow-2xl"
+            />
+            <div className="flex items-center gap-3 rounded-full bg-[#fbf9f3]/92 px-5 py-2 text-xs text-[#171916] shadow-lg">
+              <span>
+                {activeArtwork.aspectRatioLabel} · {activeArtwork.styleLabel}
+              </span>
+              <a
+                href={activeArtwork.imageUrl}
+                download
+                className="inline-flex items-center gap-1 rounded-full bg-[#171916] px-3.5 py-1 text-xs font-medium text-[#faf7ef]"
+              >
+                <Download size={12} aria-hidden /> 下载原图
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -441,29 +947,4 @@ function getErrorMessage(error: string) {
   };
 
   return messages[error] ?? "生成失败，请稍后重试。";
-}
-
-function SelectField<T extends Record<string, { label: string }>>({
-  name,
-  label,
-  options,
-  defaultValue,
-}: {
-  name: string;
-  label: string;
-  options: T;
-  defaultValue?: string;
-}) {
-  return (
-    <label className="grid gap-2 text-sm font-semibold text-black">
-      {label}
-      <select name={name} defaultValue={defaultValue} className="rounded-full border border-black/10 bg-[#f8faf7] px-4 py-3 font-normal text-black outline-none transition focus:border-black/30 focus:bg-white">
-        {Object.entries(options).map(([value, option]) => (
-          <option key={value} value={value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
 }

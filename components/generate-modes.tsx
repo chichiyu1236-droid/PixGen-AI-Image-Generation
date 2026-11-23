@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Sparkles, X } from "lucide-react";
+import { Lock, MessageSquareText, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -27,114 +27,115 @@ export function GenerateModes({
   }, [mode]);
 
   return (
-    <div>
-      <div className="mb-6 grid gap-4 md:grid-cols-2">
-        <ModeCard
-          active={mode === "classic"}
-          onClick={() => setMode("classic")}
-          eyebrow="CLASSIC"
-          title="经典生成"
-          description="选好画面方向，写下主体和细节，一步到位出图。适合心里已经有大致画面的用户。"
-          who="我有大致想法"
-        />
-        <ModeCard
-          active={mode === "agent"}
-          onClick={() => (membershipActive ? setMode("agent") : setShowUpgrade(true))}
-          eyebrow="AGENT"
-          title="Agent 对话"
-          description="哪怕只有一句模糊的感觉也可以。Agent 帮你澄清想法、写好提示词，生成后还能继续对话修改。"
-          who="还没想好，聊聊看"
-          highlight
-          locked={!membershipActive}
-        />
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Compact studio mode switcher bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/86 px-3.5 py-2.5 shadow-[0_10px_28px_rgba(23,25,22,0.035)] backdrop-blur-md">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="创作模式切换">
+          <button
+            type="button"
+            onClick={() => setMode("classic")}
+            aria-pressed={mode === "classic"}
+            className={[
+              "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-left text-xs transition sm:text-sm",
+              mode === "classic"
+                ? "bg-[#171916] font-medium text-[#faf7ef] shadow-[0_8px_20px_rgba(23,25,22,0.14)]"
+                : "border border-[#171916]/10 bg-[#f4f0e5]/75 text-[#484e45] hover:border-[#171916]/25 hover:text-[#171916]",
+            ].join(" ")}
+          >
+            <SlidersHorizontal size={14} aria-hidden />
+            <span>经典生成</span>
+            <span
+              className={`hidden rounded-full px-2 py-0.5 text-[10px] sm:inline-block ${
+                mode === "classic" ? "bg-white/15 text-[#faf7ef]/85" : "bg-[#fbf9f3] text-[#6d7368]"
+              }`}
+            >
+              我有大致想法
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => (membershipActive ? setMode("agent") : setShowUpgrade(true))}
+            aria-pressed={mode === "agent"}
+            className={[
+              "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-left text-xs transition sm:text-sm",
+              mode === "agent"
+                ? "bg-[#171916] font-medium text-[#faf7ef] shadow-[0_8px_20px_rgba(23,25,22,0.14)]"
+                : "border border-[#171916]/10 bg-[#f4f0e5]/75 text-[#484e45] hover:border-[#171916]/25 hover:text-[#171916]",
+            ].join(" ")}
+          >
+            <MessageSquareText size={14} aria-hidden />
+            <span>Agent 对话</span>
+            <span
+              className={`hidden rounded-full px-2 py-0.5 text-[10px] sm:inline-block ${
+                mode === "agent" ? "bg-white/15 text-[#faf7ef]/85" : "bg-[#fbf9f3] text-[#6d7368]"
+              }`}
+            >
+              还没想好，聊聊看
+            </span>
+            {!membershipActive ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#b48a52]/35 bg-[#f4ead8] px-2 py-0.5 text-[10px] font-semibold text-[#7b5827]">
+                <Lock size={10} aria-hidden /> 会员专属
+              </span>
+            ) : (
+              <span className="rounded-full bg-[#384a3a] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#faf7ef]">
+                AI
+              </span>
+            )}
+          </button>
+        </div>
+
+        <p className="hidden text-xs text-[#6d7368] xl:block">
+          {mode === "classic"
+            ? "选择比例、风格与参考图，精准生成单张商业视觉"
+            : "用自然语言聊出画面方向，选中画布任意版本多轮迭代"}
+        </p>
       </div>
 
-      <div className={mode === "classic" ? "" : "hidden"}>{classicForm}</div>
-      <div className={mode === "agent" ? "" : "hidden"}>{agentWorkbench}</div>
+      {/* Both panes stay mounted in DOM; inactive wrapper uses exact "hidden" class */}
+      <div className={mode === "classic" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{classicForm}</div>
+      <div className={mode === "agent" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{agentWorkbench}</div>
 
       {showUpgrade ? <AgentUpgradeDialog onClose={() => setShowUpgrade(false)} /> : null}
     </div>
   );
 }
 
-function ModeCard({
-  active,
-  onClick,
-  eyebrow,
-  title,
-  description,
-  who,
-  highlight,
-  locked,
-}: {
-  active: boolean;
-  onClick: () => void;
-  eyebrow: string;
-  title: string;
-  description: string;
-  who: string;
-  highlight?: boolean;
-  locked?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`relative rounded-[2rem] border p-5 text-left transition ${
-        active
-          ? "border-black/55 bg-white/92 shadow-[0_24px_70px_rgba(0,0,0,0.045)]"
-          : "border-black/10 bg-white/60 hover:border-black/25"
-      }`}
-    >
-      {locked ? (
-        <span className="absolute right-5 top-4 inline-flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-black/55">
-          <Lock size={11} aria-hidden /> 会员专属
-        </span>
-      ) : highlight ? (
-        <span className="absolute right-5 top-4 rounded-full bg-[#47624c] px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-white">
-          NEW
-        </span>
-      ) : null}
-      <p className="font-display text-[15px] tracking-[0.16em] text-black/38">{eyebrow}</p>
-      <h2 className="mt-2 text-[22px] font-normal text-black">{title}</h2>
-      <p className="mt-1.5 text-[13px] leading-6 text-black/55">{description}</p>
-      <span
-        className={`mt-2.5 inline-block rounded-full border px-3 py-1 text-xs font-semibold ${
-          active ? "border-black bg-black text-[#fffdf8]" : "border-black/15 bg-white text-black/66"
-        }`}
-      >
-        {who}
-      </span>
-    </button>
-  );
-}
-
 export function AgentModeHint() {
   return (
-    <p className="flex items-center gap-2 text-sm text-black/52">
-      <Sparkles size={16} aria-hidden /> Agent 模式由对话驱动，消耗积分与经典模式一致
+    <p className="flex items-center gap-2 text-sm text-[#6d7368]">
+      <Sparkles size={15} aria-hidden /> Agent 模式由对话驱动，消耗积分与经典模式一致
     </p>
   );
 }
 
 function AgentUpgradeDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-6" role="dialog" aria-modal="true" aria-label="升级会员">
-      <div className="w-full max-w-md rounded-[2rem] border border-black/10 bg-white p-8 text-center shadow-[0_24px_70px_rgba(0,0,0,0.12)]">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-[#171916]/45 px-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="升级会员"
+    >
+      <div className="w-full max-w-md rounded-[2rem] border border-[#171916]/12 bg-[#fbf9f3] p-8 text-center shadow-[0_28px_72px_rgba(23,25,22,0.18)]">
         <div className="flex justify-end">
-          <button type="button" onClick={onClose} aria-label="关闭" className="rounded-full p-1 text-black/40 hover:text-black">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="rounded-full p-1.5 text-[#6d7368] transition hover:bg-[#eee9dc] hover:text-[#171916]"
+          >
             <X size={18} aria-hidden />
           </button>
         </div>
-        <p className="font-display text-2xl tracking-[0.12em] text-black/40">MEMBER</p>
-        <h3 className="mt-2 text-2xl font-light text-black">Agent 对话是会员专属</h3>
-        <p className="mt-3 text-sm leading-6 text-black/60">
-          开通标准或 Pro 会员卡即可使用 Agent 对话工作台：聊聊想法就能出图，还能继续对话改图。
+        <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">MEMBER ATELIER</p>
+        <h3 className="mt-2 font-display text-2xl font-normal text-[#171916]">Agent 对话是会员专属</h3>
+        <p className="mt-3 text-sm leading-6 text-[#484e45]">
+          开通标准或 Pro 会员卡即可使用 Agent 对话工作台：聊聊想法就能出图，还能选中画布作品继续对话改图与批量变体。
         </p>
         <Link
           href="/upgrade"
-          className="mt-6 inline-flex rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-black/90"
+          className="mt-6 inline-flex rounded-full bg-[#171916] px-6 py-2.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"
         >
           查看会员方案
         </Link>
