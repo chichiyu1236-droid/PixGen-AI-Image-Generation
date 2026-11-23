@@ -5,7 +5,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export function GoogleLoginButton({
   next = "/generate",
-  className = "inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/90",
+  className = "inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-5 py-2.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]",
 }: {
   next?: string;
   className?: string;
@@ -21,14 +21,18 @@ export function GoogleLoginButton({
   }
 
   return (
-    <button onClick={signIn} className={className}>
-      <LogIn size={18} />
+    <button type="button" onClick={signIn} className={className}>
+      <LogIn size={16} aria-hidden />
       Google 登录
     </button>
   );
 }
 
-export function LogoutButton() {
+export function LogoutButton({
+  className = "inline-flex items-center justify-center gap-2 rounded-full border border-[#171916]/12 bg-[#fbf9f3] px-3.5 py-2 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/25 hover:text-[#171916]",
+}: {
+  className?: string;
+}) {
   async function signOut() {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
@@ -36,9 +40,9 @@ export function LogoutButton() {
   }
 
   return (
-    <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black transition hover:border-black/20">
-      <LogOut size={16} />
-      退出
+    <button type="button" onClick={signOut} className={className}>
+      <LogOut size={14} aria-hidden />
+      退出登录
     </button>
   );
 }

@@ -17,14 +17,16 @@ const bodyFont = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "PromptCraft Image",
-  description: "一个白底、清新的 AI 图片生成工作台。",
+  title: "PixGen",
+  description: "选好方向直接出图，也能和 Agent 边聊边改的 AI 生图工具。",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN">
-      <body className={`${displayFont.variable} ${bodyFont.variable}`}>{children}</body>
+      <body className={`${displayFont.variable} ${bodyFont.variable} oil-linen-surface antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }

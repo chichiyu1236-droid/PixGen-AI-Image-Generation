@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Check, Loader2, ShieldCheck, Sparkles, X } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { formatFenAsCny } from "@/lib/billing/money";
@@ -21,9 +22,24 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 const TIERS = [
-  { quota: 100, label: "标准", blurb: "适合偶尔生成灵感的轻量用户", popular: false },
-  { quota: 300, label: "Pro", blurb: "适合高频创作的重度用户", popular: true },
+  { quota: 100, label: "标准", blurb: "适合日常出图与轻量使用", popular: false },
+  { quota: 300, label: "Pro", blurb: "适合高频出图与多轮改图", popular: true },
 ];
+
+const FAQ_ITEMS = [
+  {
+    q: "会触发自动续费吗？",
+    a: "不会。所有会员卡均为手动续费，到期前 3 天站内提醒，不会自动扣款。",
+  },
+  {
+    q: "会员期内续费或升级怎么计算？",
+    a: "立即发放所购档位一期额度，会员有效期在原到期日基础上叠加顺延。",
+  },
+  {
+    q: "订阅积分与永久积分如何扣减？",
+    a: "优先扣减当期订阅池积分，订阅池用完后自动使用永久池积分兜底，永久积分不过期。",
+  },
+] as const;
 
 function savingsPercent(monthly: MembershipPlan, yearly: MembershipPlan): number {
   const fullPrice = monthly.amountFen * 12;
@@ -40,8 +56,6 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
   const [isWeChat, setIsWeChat] = useState(false);
 
   useEffect(() => {
-    // WeChat's in-app browser cannot launch WeChat Pay without an official
-    // merchant mini-program, so guide users out and favor Alipay.
     if (typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent)) {
       setIsWeChat(true);
       setChannel("alipay");
@@ -81,20 +95,22 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
   }
 
   return (
-    <section>
+    <section className="space-y-8">
       {isWeChat ? (
-        <div className="mb-6 rounded-[1.25rem] border border-amber-300/60 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-900">
+        <div className="rounded-2xl border border-[#b48a52]/35 bg-[#f6ebd9] px-5 py-4 text-sm leading-6 text-[#5a411e]">
           检测到你正在微信内打开本页。微信内无法拉起微信支付，请点击右上角「···」选择「在浏览器打开」，或直接使用支付宝支付。
         </div>
       ) : null}
 
-      <div className="mb-6 flex flex-wrap items-center justify-center gap-6">
-        <div className="flex items-center rounded-full border border-black/10 bg-white p-1">
+      {/* Billing Cycle & Payment Channel Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#171916]/10 bg-[#fbf9f3]/88 p-3 shadow-[0_12px_32px_rgba(23,25,22,0.04)]">
+        <div className="inline-flex items-center rounded-full border border-[#171916]/10 bg-[#f4f0e5] p-1">
           <button
             type="button"
             onClick={() => setBilling("monthly")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              billing === "monthly" ? "bg-black text-white" : "text-black/60 hover:text-black"
+            aria-pressed={billing === "monthly"}
+            className={`rounded-full px-5 py-2 text-xs font-semibold transition sm:text-sm ${
+              billing === "monthly" ? "bg-[#171916] text-[#faf7ef] shadow-sm" : "text-[#484e45] hover:text-[#171916]"
             }`}
           >
             月付
@@ -102,21 +118,27 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
           <button
             type="button"
             onClick={() => setBilling("yearly")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              billing === "yearly" ? "bg-black text-white" : "text-black/60 hover:text-black"
+            aria-pressed={billing === "yearly"}
+            className={`rounded-full px-5 py-2 text-xs font-semibold transition sm:text-sm ${
+              billing === "yearly" ? "bg-[#171916] text-[#faf7ef] shadow-sm" : "text-[#484e45] hover:text-[#171916]"
             }`}
           >
             年付省 17%
           </button>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[#6d7368]">支付方式</span>
           {CHANNELS.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => setChannel(item.id)}
-              className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
-                channel === item.id ? "bg-black text-white" : "border border-black/10 bg-white text-black hover:border-black/25"
+              aria-pressed={channel === item.id}
+              className={`rounded-full px-4 py-2 text-xs font-semibold transition sm:text-sm ${
+                channel === item.id
+                  ? "bg-[#384a3a] text-[#faf7ef]"
+                  : "border border-[#171916]/12 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/30 hover:text-[#171916]"
               }`}
             >
               {item.label}
@@ -125,26 +147,40 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <div className="flex flex-col rounded-[1.5rem] border border-black/10 bg-white p-6 shadow-[0_18px_50px_rgba(0,0,0,0.05)]">
-          <p className="font-display text-xl tracking-[0.1em] text-black/40">FREE</p>
-          <h2 className="mt-2 text-2xl font-bold">免费体验</h2>
-          <p className="mt-3 text-4xl font-bold">¥0</p>
-          <p className="mt-3 text-sm leading-6 text-black/60">5 张试用积分 · 经典模式。</p>
+      {/* Three-Column Oil Gallery Pricing Cards */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Free Tier */}
+        <div className="flex flex-col rounded-[1.85rem] border border-[#171916]/10 bg-[#fbf9f3]/92 p-7 shadow-[0_18px_48px_rgba(23,25,22,0.045)]">
+          <p className="font-display text-xs tracking-[0.22em] text-[#6d7368]">FREE</p>
+          <h2 className="mt-2 font-display text-2xl font-normal text-[#171916]">免费体验</h2>
+          <p className="mt-4 font-display text-4xl font-normal tabular-nums text-[#171916]">¥0</p>
+          <p className="mt-2 text-xs leading-5 text-[#6d7368]">5 张试用积分 · 经典模式。</p>
+
           <button
             type="button"
             disabled
-            className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-black/5 px-5 py-3 text-sm font-semibold text-black/40"
+            className="mt-6 inline-flex items-center justify-center rounded-full border border-[#171916]/10 bg-[#f4f0e5] px-5 py-3 text-sm font-medium text-[#92978b]"
           >
-            当前方案
+            当前基础层
           </button>
-          <ul className="mt-6 space-y-2 text-sm leading-6 text-black/60">
-            <li>✓ 5 张一次性试用积分，不刷新</li>
-            <li>✓ 经典生成模式</li>
-            <li>✗ Agent 对话（会员专属）</li>
+
+          <ul className="mt-7 space-y-2.5 border-t border-[#171916]/8 pt-6 text-sm leading-6 text-[#484e45]">
+            <li className="flex items-start gap-2">
+              <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+              <span>5 张一次性试用积分，不刷新</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+              <span>经典生成模式与参考图上传</span>
+            </li>
+            <li className="flex items-start gap-2 text-[#92978b]">
+              <X size={15} className="mt-1 shrink-0" aria-hidden />
+              <span>Agent 对话（会员专属）</span>
+            </li>
           </ul>
         </div>
 
+        {/* Standard & Pro Tiers */}
         {TIERS.map((tier) => {
           const plan = planForTier(tier.quota);
 
@@ -152,57 +188,112 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
             return null;
           }
 
-          const monthlyPlan = plans.find((candidate) => candidate.quotaPerTranche === tier.quota && candidate.periodDays === 30);
+          const monthlyPlan = plans.find(
+            (candidate) => candidate.quotaPerTranche === tier.quota && candidate.periodDays === 30,
+          );
           const savings = monthlyPlan && billing === "yearly" ? savingsPercent(monthlyPlan, plan) : 0;
 
           return (
             <div
               key={tier.quota}
-              className={`relative flex flex-col rounded-[1.5rem] border p-6 shadow-[0_18px_50px_rgba(0,0,0,0.05)] ${
-                tier.popular ? "border-black/70 bg-white" : "border-black/10 bg-white"
-              }`}
+              className={[
+                "relative flex flex-col overflow-hidden rounded-[1.85rem] border p-7 transition",
+                tier.popular
+                  ? "border-[#566c58]/55 bg-[#fbf9f3] shadow-[0_24px_64px_rgba(56,74,58,0.12)]"
+                  : "border-[#171916]/10 bg-[#fbf9f3]/92 shadow-[0_18px_48px_rgba(23,25,22,0.045)]",
+              ].join(" ")}
             >
               {tier.popular ? (
-                <span className="absolute -top-3 left-6 rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">
-                  Most popular
-                </span>
+                <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-36 opacity-55">
+                  <Image src="/images/oil-section-wash.webp" alt="" fill sizes="35vw" className="object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#fbf9f3]/40 to-[#fbf9f3]" />
+                </div>
               ) : null}
-              <p className="font-display text-xl tracking-[0.1em] text-black/40">{tier.label.toUpperCase()}</p>
-              <h2 className="mt-2 text-2xl font-bold">{plan.name}</h2>
-              <p className="mt-3 text-4xl font-bold">
-                {formatFenAsCny(plan.amountFen)}
-                <span className="ml-1 text-base font-medium text-black/45">{billing === "monthly" ? "/月" : "/年"}</span>
-              </p>
-              {savings > 0 ? (
-                <p className="mt-1 text-xs font-semibold text-emerald-700">较月付省 {savings}%</p>
-              ) : (
-                <p className="mt-1 text-xs text-black/45">{tier.blurb}</p>
-              )}
-              <button
-                type="button"
-                onClick={() => onBuy(plan)}
-                disabled={loadingPlanId !== null}
-                className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-semibold text-white transition hover:bg-black/90 disabled:opacity-60"
-              >
-                {loadingPlanId === plan.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                {loadingPlanId === plan.id ? "正在创建订单…" : "立即开通"}
-              </button>
-              <ul className="mt-6 space-y-2 text-sm leading-6 text-black/60">
-                <li>✓ 每期 {plan.quotaPerTranche} 张生成额度</li>
-                <li>✓ Agent 对话工作台（会员专属）</li>
-                <li>✓ {billing === "yearly" ? `年卡共 ${plan.tranches} 期，按 30 天逐期发放` : "会员期 30 天"}</li>
-                <li>✓ 订阅积分优先消耗，永久积分兜底</li>
-                <li>✓ 有效期内续费/升级随时顺延</li>
-              </ul>
+
+              <div className="relative z-10 flex flex-1 flex-col">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-display text-xs tracking-[0.22em] text-[#6d7368]">{tier.label.toUpperCase()}</p>
+                  {tier.popular ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#384a3a] px-3 py-1 text-[11px] font-medium text-[#faf7ef]">
+                      <Sparkles size={11} aria-hidden /> 推荐方案
+                    </span>
+                  ) : null}
+                </div>
+
+                <h2 className="mt-2 font-display text-2xl font-normal text-[#171916]">{plan.name}</h2>
+
+                <p className="mt-4 font-display text-4xl font-normal tabular-nums text-[#171916]">
+                  {formatFenAsCny(plan.amountFen)}
+                  <span className="ml-1 font-sans text-sm font-normal text-[#6d7368]">
+                    {billing === "monthly" ? "/月" : "/年"}
+                  </span>
+                </p>
+
+                {savings > 0 ? (
+                  <p className="mt-1.5 text-xs font-semibold text-[#384a3a]">较月付省 {savings}%</p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-[#6d7368]">{tier.blurb}</p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => void onBuy(plan)}
+                  disabled={loadingPlanId !== null}
+                  className={[
+                    "mt-6 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition disabled:opacity-60",
+                    tier.popular
+                      ? "bg-[#171916] text-[#faf7ef] shadow-[0_12px_28px_rgba(23,25,22,0.16)] hover:bg-[#2a2e28]"
+                      : "bg-[#171916] text-[#faf7ef] hover:bg-[#2a2e28]",
+                  ].join(" ")}
+                >
+                  {loadingPlanId === plan.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                  {loadingPlanId === plan.id ? "正在创建订单…" : "立即开通"}
+                </button>
+
+                <ul className="mt-7 space-y-2.5 border-t border-[#171916]/8 pt-6 text-sm leading-6 text-[#484e45]">
+                  <li className="flex items-start gap-2">
+                    <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+                    <span>每期 {plan.quotaPerTranche} 张生成额度</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+                    <span>Agent 对话工作台（会员专属）</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+                    <span>{billing === "yearly" ? `年卡共 ${plan.tranches} 期，按 30 天逐期发放` : "会员期 30 天"}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+                    <span>订阅积分优先消耗，永久积分兜底</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check size={15} className="mt-1 shrink-0 text-[#566c58]" aria-hidden />
+                    <span>有效期内续费或升级随时顺延</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           );
         })}
       </div>
 
-      {message ? <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{message}</p> : null}
+      {message ? (
+        <p className="rounded-2xl border border-[#b45340]/25 bg-[#fdf3f0] px-4 py-3 text-sm text-[#8a3222]">{message}</p>
+      ) : null}
 
-      <p className="mt-8 flex items-center gap-2 text-xs text-black/45">
-        <ShieldCheck className="h-4 w-4" aria-hidden />
+      {/* Concise Editorial FAQ Strip */}
+      <div className="grid gap-4 rounded-[1.75rem] border border-[#171916]/10 bg-[#fbf9f3]/82 p-6 md:grid-cols-3">
+        {FAQ_ITEMS.map((item) => (
+          <div key={item.q} className="space-y-1.5">
+            <h3 className="text-sm font-semibold text-[#171916]">{item.q}</h3>
+            <p className="text-xs leading-6 text-[#6d7368]">{item.a}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="flex items-center gap-2 text-xs text-[#6d7368]">
+        <ShieldCheck className="h-4 w-4 shrink-0 text-[#566c58]" aria-hidden />
         会员卡为手动续费：到期前 3 天站内提醒，再次购买即顺延会员期并发放新一期额度，不会自动扣款；每期额度按期有效、不滚存。
       </p>
     </section>
