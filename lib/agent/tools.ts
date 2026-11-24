@@ -6,7 +6,7 @@ import type { Database } from "@/types/database";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
 import { buildImagePrompt } from "@/lib/prompts/builder";
-import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions } from "@/lib/prompts/options";
+import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions, type AspectRatioId } from "@/lib/prompts/options";
 import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 import { generateRequestSchema } from "@/lib/validation/generate";
 import type { ToolDefinition, ToolResult } from "@/lib/agent/types";
@@ -194,8 +194,18 @@ async function runGenerateImage(ctx: ToolContext): Promise<ToolResult> {
   });
 
   if (error) {
-    return { ok: false, error: rpcErrorKind(error), retryable: true };
+    await ctx.admin.storage.from(GENERATED_IMAGES_BUCKET).remove([uploaded.storagePath]).catch(() => undefined);
+    const kind = rpcErrorKind(error);
+
+    if (kind === "insufficient_credits") {
+      ctx.totalCredits = 0;
+      return { ok: false, error: kind, retryable: false };
+    }
+
+    return { ok: false, error: kind, retryable: true };
   }
+
+  ctx.totalCredits = Math.max(0, ctx.totalCredits - 1);
 
   return {
     ok: true,
@@ -206,6 +216,14 @@ async function runGenerateImage(ctx: ToolContext): Promise<ToolResult> {
       costCredits: 1,
     },
   };
+}
+
+function resolveAspectRatio(value: string | null | undefined): AspectRatioId {
+  if (value && Object.prototype.hasOwnProperty.call(aspectRatios, value)) {
+    return value as AspectRatioId;
+  }
+
+  return "square";
 }
 
 async function runEditImage(args: unknown, ctx: ToolContext): Promise<ToolResult> {
@@ -223,7 +241,7 @@ async function runEditImage(args: unknown, ctx: ToolContext): Promise<ToolResult
 
   const { data: source } = await ctx.admin
     .from("generations")
-    .select("id, user_id, storage_path, final_prompt")
+    .select("id, user_id, storage_path, final_prompt, aspect_ratio")
     .eq("id", parsed.data.generationId)
     .maybeSingle();
 
@@ -243,12 +261,14 @@ async function runEditImage(args: unknown, ctx: ToolContext): Promise<ToolResult
     return { ok: false, error: "source_image_unavailable", retryable: true };
   }
 
+  const aspectRatio = resolveAspectRatio(source.aspect_ratio);
+  const size = aspectRatios[aspectRatio].size;
   const sourceBase64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
   const editPrompt = `${source.final_prompt}\nEdit instruction (apply only this change, keep everything else): ${parsed.data.instruction}`;
   let base64Image: string;
 
   try {
-    base64Image = await editImageBase64({ prompt: editPrompt, images: [sourceBase64] });
+    base64Image = await editImageBase64({ prompt: editPrompt, images: [sourceBase64], size });
   } catch (error) {
     return providerFailure(error);
   }
@@ -270,7 +290,7 @@ async function runEditImage(args: unknown, ctx: ToolContext): Promise<ToolResult
     p_input_subject: parsed.data.instruction,
     p_input_extra: "",
     p_options_json: { editOf: source.id, kind: parsed.data.kind },
-    p_aspect_ratio: "square",
+    p_aspect_ratio: aspectRatio,
     p_agent_session_id: ctx.sessionId,
     p_parent_generation_id: source.id,
     p_origin: origin,
@@ -278,8 +298,18 @@ async function runEditImage(args: unknown, ctx: ToolContext): Promise<ToolResult
   });
 
   if (error) {
-    return { ok: false, error: rpcErrorKind(error), retryable: true };
+    await ctx.admin.storage.from(GENERATED_IMAGES_BUCKET).remove([uploaded.storagePath]).catch(() => undefined);
+    const kind = rpcErrorKind(error);
+
+    if (kind === "insufficient_credits") {
+      ctx.totalCredits = 0;
+      return { ok: false, error: kind, retryable: false };
+    }
+
+    return { ok: false, error: kind, retryable: true };
   }
+
+  ctx.totalCredits = Math.max(0, ctx.totalCredits - 1);
 
   return {
     ok: true,

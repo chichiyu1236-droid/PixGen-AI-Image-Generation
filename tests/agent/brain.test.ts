@@ -1,6 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createBrain } from "@/lib/agent/brain";
 import { createMockBrain } from "@/lib/agent/brains/mock";
 import type { BrainTurnRequest, ToolDefinition } from "@/lib/agent/types";
+
+const openaiChatMocks = vi.hoisted(() => {
+  const create = vi.fn();
+  const OpenAI = vi.fn(() => ({
+    chat: {
+      completions: {
+        create,
+      },
+    },
+  }));
+
+  return { create, OpenAI };
+});
+
+vi.mock("openai", () => ({
+  default: openaiChatMocks.OpenAI,
+}));
 
 const tools: ToolDefinition[] = [];
 const canvas = [
@@ -121,5 +139,128 @@ describe("mock brain intent routing", () => {
     });
 
     if (second.kind === "text") expect(second.text).toContain("积分");
+  });
+});
+
+describe("RealBrain OpenAI tool-call protocol", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = {
+      ...ORIGINAL_ENV,
+      AGENT_PROVIDER: "real",
+      AGENT_LLM_API_KEY: "test-llm-key",
+      AGENT_LLM_BASE_URL: "https://llm.example.com/v1",
+      AGENT_LLM_MODEL: "glm-4.6",
+    };
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("extracts all tool_calls even when a relay returns finish_reason='stop'", async () => {
+    openaiChatMocks.create.mockResolvedValueOnce({
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            content: "马上生成两个变体",
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: {
+                  name: "edit_image",
+                  arguments: JSON.stringify({ generationId: "gen-1", instruction: "海洋蓝", kind: "variant" }),
+                },
+              },
+              {
+                id: "call_2",
+                type: "function",
+                function: {
+                  name: "edit_image",
+                  arguments: JSON.stringify({ generationId: "gen-1", instruction: "森林绿", kind: "variant" }),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const brain = createBrain();
+    const response = await brain.respond(request("生成两个不同配色变体", { selectedGenerationId: "gen-1" }));
+
+    expect(response).toEqual({
+      kind: "tool_calls",
+      content: "马上生成两个变体",
+      calls: [
+        {
+          id: "call_1",
+          toolName: "edit_image",
+          args: { generationId: "gen-1", instruction: "海洋蓝", kind: "variant" },
+        },
+        {
+          id: "call_2",
+          toolName: "edit_image",
+          args: { generationId: "gen-1", instruction: "森林绿", kind: "variant" },
+        },
+      ],
+    });
+  });
+
+  it("serializes assistant toolCalls and matches each tool message tool_call_id", async () => {
+    openaiChatMocks.create.mockResolvedValueOnce({
+      choices: [{ finish_reason: "stop", message: { content: "两个变体已完成" } }],
+    });
+
+    const brain = createBrain();
+    const response = await brain.respond({
+      messages: [
+        { role: "user", content: "生成两个变体" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            { id: "call_a", toolName: "edit_image", args: { generationId: "gen-1", instruction: "海洋蓝" } },
+            { id: "call_b", toolName: "edit_image", args: { generationId: "gen-1", instruction: "森林绿" } },
+          ],
+        },
+        { role: "tool", toolCallId: "call_a", toolName: "edit_image", result: { ok: true, data: { generationId: "gen-2" } } },
+        { role: "tool", toolCallId: "call_b", toolName: "edit_image", result: { ok: false, error: "insufficient_credits", retryable: false } },
+      ],
+      tools,
+      context: { canvas, selectedGenerationId: "gen-1" },
+    });
+
+    expect(response).toEqual({ kind: "text", text: "两个变体已完成" });
+
+    const sent = openaiChatMocks.create.mock.calls[0][0] as { messages: Array<Record<string, unknown>> };
+    expect(sent.messages[2]).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "call_a",
+          type: "function",
+          function: {
+            name: "edit_image",
+            arguments: JSON.stringify({ generationId: "gen-1", instruction: "海洋蓝" }),
+          },
+        },
+        {
+          id: "call_b",
+          type: "function",
+          function: {
+            name: "edit_image",
+            arguments: JSON.stringify({ generationId: "gen-1", instruction: "森林绿" }),
+          },
+        },
+      ],
+    });
+    expect(sent.messages[3]).toMatchObject({ role: "tool", tool_call_id: "call_a" });
+    expect(sent.messages[4]).toMatchObject({ role: "tool", tool_call_id: "call_b" });
   });
 });

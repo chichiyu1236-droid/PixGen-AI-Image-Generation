@@ -139,4 +139,75 @@ describe("runAgentTurn", () => {
     expect(result.trace).toEqual([]);
     expect(result.toolCalls).toEqual([]);
   });
+
+  it("pushes assistant toolCalls and emits a matching tool result for every tool_call_id in a multi-tool batch", async () => {
+    vi.mocked(runAgentTool)
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { generationId: "gen-2", imageUrl: "https://example.test/2.png", origin: "agent_variant", costCredits: 1 },
+      })
+      .mockResolvedValueOnce({ ok: false, error: "insufficient_credits", retryable: false });
+
+    const observedBatches: BrainTurnResponse[] = [];
+    let observedMessages: unknown[] = [];
+    let turn = 0;
+
+    const brain: AgentBrain = {
+      async respond(req) {
+        turn += 1;
+        if (turn === 1) {
+          const response: BrainTurnResponse = {
+            kind: "tool_calls",
+            content: "开始出两个变体",
+            calls: [
+              { id: "call_1", toolName: "edit_image", args: { generationId: "gen-1", instruction: "海洋蓝", kind: "variant" } },
+              { id: "call_2", toolName: "edit_image", args: { generationId: "gen-1", instruction: "森林绿", kind: "variant" } },
+            ],
+          };
+          observedBatches.push(response);
+          return response;
+        }
+
+        observedMessages = req.messages.map((m) => ({ ...m }));
+        return { kind: "text", text: "完成了第一个变体，第二个因积分不足未生成。" };
+      },
+    };
+
+    const result = await runAgentTurn(turnInput(brain));
+
+    expect(observedBatches).toHaveLength(1);
+    expect(result.replyText).toBe("完成了第一个变体，第二个因积分不足未生成。");
+    expect(vi.mocked(runAgentTool)).toHaveBeenCalledTimes(2);
+    expect(result.toolCalls).toEqual([
+      { name: "edit_image", argsSummary: "instruction: 海洋蓝", ok: true },
+      { name: "edit_image", argsSummary: "instruction: 森林绿", ok: false },
+    ]);
+
+    expect(observedMessages).toEqual([
+      { role: "user", content: "做一张海报" },
+      {
+        role: "assistant",
+        content: "开始出两个变体",
+        toolCalls: [
+          { id: "call_1", toolName: "edit_image", args: { generationId: "gen-1", instruction: "海洋蓝", kind: "variant" } },
+          { id: "call_2", toolName: "edit_image", args: { generationId: "gen-1", instruction: "森林绿", kind: "variant" } },
+        ],
+      },
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        toolName: "edit_image",
+        result: {
+          ok: true,
+          data: { generationId: "gen-2", imageUrl: "https://example.test/2.png", origin: "agent_variant", costCredits: 1 },
+        },
+      },
+      {
+        role: "tool",
+        toolCallId: "call_2",
+        toolName: "edit_image",
+        result: { ok: false, error: "insufficient_credits", retryable: false },
+      },
+    ]);
+  });
 });

@@ -3,7 +3,7 @@ import "server-only";
 import OpenAI from "openai";
 import { getAgentEnv, resolveBrainProvider } from "@/lib/agent/env";
 import { createMockBrain } from "@/lib/agent/brains/mock";
-import type { AgentBrain, BrainTurnRequest, BrainTurnResponse } from "@/lib/agent/types";
+import type { AgentBrain, BrainTurnRequest, BrainTurnResponse, ToolCallSpec } from "@/lib/agent/types";
 
 export const AGENT_SYSTEM_PROMPT = `你是 PixGen 的图片创作 Agent，服务两类请求：帮没有想法的用户聊出想法，以及为有想法的用户直接生成、修改图片。
 
@@ -38,9 +38,20 @@ class RealBrain implements AgentBrain {
         messages.push({
           role: "tool",
           content: JSON.stringify(message.result),
-          // The SDK requires a tool_call_id; the loop renders each call as its
-          // own exchange, so a stable per-tool id keeps the protocol satisfied.
-          tool_call_id: `call_${message.toolName}`,
+          tool_call_id: message.toolCallId ?? `call_${message.toolName}`,
+        });
+      } else if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
+        messages.push({
+          role: "assistant",
+          content: message.content || null,
+          tool_calls: message.toolCalls.map((call) => ({
+            id: call.id,
+            type: "function" as const,
+            function: {
+              name: call.toolName,
+              arguments: JSON.stringify(call.args ?? {}),
+            },
+          })),
         });
       } else {
         messages.push({ role: message.role, content: message.content });
@@ -61,13 +72,26 @@ class RealBrain implements AgentBrain {
     });
 
     const choice = completion.choices[0];
-    const call = choice?.message?.tool_calls?.[0];
+    const rawToolCalls = choice?.message?.tool_calls ?? [];
+    const functionCalls: ToolCallSpec[] = [];
 
-    if (call && "function" in call && choice?.finish_reason === "tool_calls") {
+    for (let index = 0; index < rawToolCalls.length; index += 1) {
+      const call = rawToolCalls[index];
+
+      if (call && "function" in call && call.function?.name) {
+        functionCalls.push({
+          id: call.id || `call_${call.function.name}_${index}`,
+          toolName: call.function.name,
+          args: safeParseJson(call.function.arguments ?? null),
+        });
+      }
+    }
+
+    if (functionCalls.length > 0) {
       return {
-        kind: "tool_call",
-        toolName: call.function.name,
-        args: safeParseJson(call.function.arguments),
+        kind: "tool_calls",
+        content: choice?.message?.content?.trim() || undefined,
+        calls: functionCalls,
       };
     }
 

@@ -517,6 +517,38 @@ export async function generateImageBase64(input: { prompt: string; size: string 
   return image;
 }
 
+function detectReferenceImageFormat(buffer: Buffer): { mime: string; ext: string } {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mime: "image/jpeg", ext: "jpg" };
+  }
+
+  if (
+    buffer.length >= 4 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return { mime: "image/png", ext: "png" };
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return { mime: "image/webp", ext: "webp" };
+  }
+
+  return { mime: "image/png", ext: "png" };
+}
+
 /** Reference-based generation via one or more input images (gpt-image /images/edits). */
 export async function editImageBase64(input: { prompt: string; images: string[]; size?: string }) {
   if (resolveImageProvider() === "mock") {
@@ -529,7 +561,11 @@ export async function editImageBase64(input: { prompt: string; images: string[];
     model,
     prompt: input.prompt,
     image: await Promise.all(
-      input.images.map((data, index) => toFile(Buffer.from(data, "base64"), `input-${index + 1}.png`, { type: "image/png" })),
+      input.images.map((data, index) => {
+        const buffer = Buffer.from(data, "base64");
+        const { mime, ext } = detectReferenceImageFormat(buffer);
+        return toFile(buffer, `input-${index + 1}.${ext}`, { type: mime });
+      }),
     ),
     n: 1,
     ...(input.size ? { size: input.size as "1024x1024" | "1024x1536" | "1536x1024" } : {}),

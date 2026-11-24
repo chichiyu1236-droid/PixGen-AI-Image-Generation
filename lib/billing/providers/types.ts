@@ -1,4 +1,4 @@
-export type PayChannel = "wechat" | "alipay";
+export type PayChannel = "wechat" | "alipay" | "stripe";
 
 export interface CreatePaymentInput {
   orderId: string;
@@ -11,6 +11,8 @@ export interface CreatePaymentInput {
 
 export interface CreatePaymentResult {
   payUrl: string;
+  /** Hosted checkout redirect URL (Stripe Checkout returns session.url; QR providers omit). */
+  redirectUrl?: string;
   providerTradeNo: string | null;
   raw: unknown;
 }
@@ -19,6 +21,8 @@ export interface QueryOrderInput {
   orderId: string;
   amountFen: number;
   channel: PayChannel;
+  providerTradeNo?: string | null;
+  stripeSessionId?: string | null;
 }
 
 export interface QueryOrderResult {

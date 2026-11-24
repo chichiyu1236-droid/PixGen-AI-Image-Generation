@@ -44,6 +44,7 @@ export async function POST(_request: Request, context: ActionContext) {
       orderId: order.id,
       amountFen: order.amount_fen,
       channel: order.channel,
+      providerTradeNo: order.provider_trade_no,
     });
     paid = result.paid;
     providerTradeNo = result.providerTradeNo;

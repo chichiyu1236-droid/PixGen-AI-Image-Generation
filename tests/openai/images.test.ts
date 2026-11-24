@@ -712,4 +712,30 @@ describe("editImageBase64", () => {
     expect(await editImageBase64({ prompt: "x", images: ["aGk=", "aGk="], size: "1024x1024" })).toBeTruthy();
     expect(openaiMocks.edit).not.toHaveBeenCalled();
   });
+
+  it("detects JPEG, PNG, and WebP magic bytes and sets matching filename and MIME type for reference images", async () => {
+    const jpegBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString("base64");
+    const pngBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
+    const webpBase64 = Buffer.from([
+      0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20,
+    ]).toString("base64");
+    const unknownBase64 = Buffer.from("hello-world").toString("base64");
+
+    await editImageBase64({
+      prompt: "preserve formats",
+      images: [jpegBase64, pngBase64, webpBase64, unknownBase64],
+    });
+
+    const args = openaiMocks.edit.mock.calls[0][0] as {
+      image: Array<{ name: string; type: string }>;
+    };
+
+    expect(args.image).toHaveLength(4);
+    expect(args.image.map((file) => ({ name: file.name, type: file.type }))).toEqual([
+      { name: "input-1.jpg", type: "image/jpeg" },
+      { name: "input-2.png", type: "image/png" },
+      { name: "input-3.webp", type: "image/webp" },
+      { name: "input-4.png", type: "image/png" },
+    ]);
+  });
 });

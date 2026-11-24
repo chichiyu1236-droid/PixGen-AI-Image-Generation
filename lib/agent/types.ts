@@ -26,11 +26,17 @@ export type BrainContext = {
   selectedGenerationId: string | null;
 };
 
+export type ToolCallSpec = {
+  id: string;
+  toolName: string;
+  args: unknown;
+};
+
 export type BrainTurnMessage =
   | { role: "system"; content: string }
   | { role: "user"; content: string }
-  | { role: "assistant"; content: string }
-  | { role: "tool"; toolName: string; result: ToolResult };
+  | { role: "assistant"; content: string; toolCalls?: ToolCallSpec[] }
+  | { role: "tool"; toolCallId?: string; toolName: string; result: ToolResult };
 
 export type BrainTurnRequest = {
   messages: BrainTurnMessage[];
@@ -40,7 +46,8 @@ export type BrainTurnRequest = {
 
 export type BrainTurnResponse =
   | { kind: "text"; text: string }
-  | { kind: "tool_call"; toolName: string; args: unknown };
+  | { kind: "tool_call"; id?: string; toolName: string; args: unknown }
+  | { kind: "tool_calls"; content?: string; calls: ToolCallSpec[] };
 
 export interface AgentBrain {
   respond(input: BrainTurnRequest): Promise<BrainTurnResponse>;

@@ -11,6 +11,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { BrainTurnMessage } from "@/lib/agent/types";
 
+export const maxDuration = 300;
+
 const messageRequestSchema = z.object({
   text: z.string().trim().min(1).max(2000),
   selectedGenerationId: z.string().uuid().nullable().default(null),

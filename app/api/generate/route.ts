@@ -10,6 +10,8 @@ import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderErrorReason, getImageProviderHealth, markImageProviderFailure } from "@/lib/openai/provider-health";
 import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 
+export const maxDuration = 180;
+
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const {
