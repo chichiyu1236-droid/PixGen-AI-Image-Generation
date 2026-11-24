@@ -1,7 +1,9 @@
 import "server-only";
 
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import type { IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP, type LookupFunction } from "node:net";
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { getServerEnv, resolveImageProvider } from "@/lib/env";
@@ -156,7 +158,28 @@ function isBlockedIp(ip: string): boolean {
   return true;
 }
 
-async function assertSafeImageUrl(url: URL): Promise<void> {
+function normalizeHostname(hostname: string): string {
+  const rawHost = hostname.trim().toLowerCase();
+  const bareHost = rawHost.startsWith("[") && rawHost.endsWith("]") ? rawHost.slice(1, -1) : rawHost;
+  return bareHost.replace(/\.+$/, "");
+}
+
+function isBlockedHostname(host: string): boolean {
+  return (
+    !host ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  );
+}
+
+/**
+ * Validates URL syntax, protocol, host blocklist, and IP literals synchronously
+ * without performing a pre-flight DNS lookup (DNS resolution happens once inside
+ * `safeLookup` when the HTTPS socket connects, preventing DNS rebinding).
+ */
+function assertSafeImageUrlSyntax(url: URL): void {
   if (url.protocol !== "https:") {
     throw new Error("Failed to download generated image: only HTTPS URLs are allowed");
   }
@@ -165,38 +188,77 @@ async function assertSafeImageUrl(url: URL): Promise<void> {
     throw new Error("Failed to download generated image: URL credentials are not allowed");
   }
 
-  const rawHost = url.hostname.toLowerCase();
-  const bareHost = rawHost.startsWith("[") && rawHost.endsWith("]") ? rawHost.slice(1, -1) : rawHost;
-  const host = bareHost.replace(/\.+$/, "");
-
-  if (
-    !host ||
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal")
-  ) {
+  const host = normalizeHostname(url.hostname);
+  if (isBlockedHostname(host)) {
     throw new Error("Failed to download generated image: host is not allowed");
   }
 
-  if (isIP(host) !== 0) {
+  if (isIP(host) !== 0 && isBlockedIp(host)) {
+    throw new Error("Failed to download generated image: IP address is not allowed");
+  }
+}
+
+/**
+ * Custom DNS lookup for `node:https` that validates all resolved records and pins
+ * the validated public IP(s) directly to the underlying socket (eliminating TOCTOU).
+ */
+export const safeLookup: LookupFunction = (hostname, options, callback) => {
+  const host = normalizeHostname(hostname);
+
+  if (isBlockedHostname(host)) {
+    callback(new Error("Failed to download generated image: host is not allowed"), "");
+    return;
+  }
+
+  const ipVersion = isIP(host);
+  if (ipVersion !== 0) {
     if (isBlockedIp(host)) {
-      throw new Error("Failed to download generated image: IP address is not allowed");
+      callback(new Error("Failed to download generated image: IP address is not allowed"), "");
+      return;
+    }
+
+    if (options?.all) {
+      callback(null, [{ address: host, family: ipVersion }]);
+    } else {
+      callback(null, host, ipVersion);
     }
     return;
   }
 
-  const records = await lookup(host, { all: true });
-  if (!records || records.length === 0) {
-    throw new Error("Failed to download generated image: unable to resolve host");
-  }
+  void lookup(host, { all: true })
+    .then((records) => {
+      if (!records || records.length === 0) {
+        callback(new Error("Failed to download generated image: unable to resolve host"), "");
+        return;
+      }
 
-  for (const record of records) {
-    if (isBlockedIp(record.address)) {
-      throw new Error("Failed to download generated image: resolved IP address is not allowed");
-    }
-  }
-}
+      for (const record of records) {
+        if (isBlockedIp(record.address)) {
+          callback(new Error("Failed to download generated image: resolved IP address is not allowed"), "");
+          return;
+        }
+      }
+
+      const requestedFamily = options?.family === 4 || options?.family === 6 ? options.family : 0;
+      const matched = requestedFamily ? records.filter((record) => record.family === requestedFamily) : records;
+      if (matched.length === 0) {
+        callback(new Error("Failed to download generated image: unable to resolve host"), "");
+        return;
+      }
+
+      if (options?.all) {
+        callback(
+          null,
+          matched.map((record) => ({ address: record.address, family: record.family })),
+        );
+      } else {
+        callback(null, matched[0].address, matched[0].family);
+      }
+    })
+    .catch((error: unknown) => {
+      callback(error instanceof Error ? error : new Error(String(error)), "");
+    });
+};
 
 function isAbortError(error: unknown): boolean {
   return (
@@ -207,48 +269,141 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-async function readBoundedResponseBase64(response: Response, signal: AbortSignal): Promise<string> {
-  const contentLengthHeader = response.headers?.get?.("content-length");
-  if (contentLengthHeader !== null && contentLengthHeader !== undefined && contentLengthHeader.trim() !== "") {
-    const contentLength = Number(contentLengthHeader);
-    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_DOWNLOAD_BYTES) {
-      await response.body?.cancel().catch(() => {});
-      throw new Error(`Failed to download generated image: response exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`);
+type HttpsHopResult =
+  | { kind: "redirect"; statusCode: number; location: string | undefined }
+  | { kind: "ok"; base64: string };
+
+function requestHttpsOnce(url: URL, signal: AbortSignal): Promise<HttpsHopResult> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason ?? new DOMException("The operation was aborted", "AbortError"));
+      return;
     }
-  }
 
-  if (!response.body) {
-    throw new Error("Failed to download generated image: empty response body");
-  }
+    let settled = false;
+    let activeRes: IncomingMessage | null = null;
+    let req: ReturnType<typeof httpsRequest> | null = null;
 
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
+    const cleanup = () => {
+      signal.removeEventListener("abort", onAbort);
+    };
 
-  try {
-    while (true) {
-      signal.throwIfAborted();
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      if (!value || value.byteLength === 0) {
-        continue;
-      }
-      totalBytes += value.byteLength;
-      if (totalBytes > MAX_IMAGE_DOWNLOAD_BYTES) {
-        throw new Error(`Failed to download generated image: response exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`);
-      }
-      chunks.push(value);
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      activeRes?.destroy();
+      req?.destroy();
+      reject(error);
+    };
+
+    const succeed = (result: HttpsHopResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const onAbort = () => {
+      fail(signal.reason ?? new DOMException("The operation was aborted", "AbortError"));
+    };
+
+    try {
+      req = httpsRequest(
+        url,
+        {
+          method: "GET",
+          agent: false,
+          signal,
+          lookup: safeLookup,
+          headers: {
+            Accept: "image/*",
+          },
+        },
+        (res) => {
+          activeRes = res;
+          res.on("error", (error) => {
+            fail(error);
+          });
+
+          const statusCode = res.statusCode ?? 0;
+
+          if (REDIRECT_STATUSES.has(statusCode)) {
+            const rawLocation = res.headers.location;
+            const location = Array.isArray(rawLocation) ? rawLocation[0] : rawLocation;
+            succeed({ kind: "redirect", statusCode, location });
+            res.resume();
+            res.destroy();
+            return;
+          }
+
+          if (statusCode < 200 || statusCode >= 300) {
+            fail(new Error(`Failed to download generated image: HTTP ${statusCode}`));
+            return;
+          }
+
+          const rawContentLength = res.headers["content-length"];
+          const contentLengthHeader = Array.isArray(rawContentLength) ? rawContentLength[0] : rawContentLength;
+          if (contentLengthHeader !== undefined && contentLengthHeader.trim() !== "") {
+            const contentLength = Number(contentLengthHeader);
+            if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_DOWNLOAD_BYTES) {
+              fail(
+                new Error(`Failed to download generated image: response exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`),
+              );
+              return;
+            }
+          }
+
+          const chunks: Buffer[] = [];
+          let totalBytes = 0;
+
+          res.on("data", (chunk: Buffer | Uint8Array | string) => {
+            if (settled) return;
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            if (buf.byteLength === 0) return;
+
+            totalBytes += buf.byteLength;
+            if (totalBytes > MAX_IMAGE_DOWNLOAD_BYTES) {
+              fail(
+                new Error(`Failed to download generated image: response exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`),
+              );
+              return;
+            }
+
+            chunks.push(buf);
+          });
+
+          res.on("end", () => {
+            if (settled) return;
+            if (res.complete === false) {
+              fail(new Error("Failed to download generated image: response stream terminated prematurely"));
+              return;
+            }
+            succeed({ kind: "ok", base64: Buffer.concat(chunks, totalBytes).toString("base64") });
+          });
+
+          res.on("aborted", () => {
+            fail(new Error("Failed to download generated image: response aborted"));
+          });
+
+          res.on("close", () => {
+            if (!settled) {
+              fail(new Error("Failed to download generated image: response closed unexpectedly"));
+            }
+          });
+        },
+      );
+
+      req.on("error", (error) => {
+        fail(error);
+      });
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      req.end();
+    } catch (error) {
+      fail(error);
     }
-  } catch (error) {
-    await reader.cancel().catch(() => {});
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-
-  return Buffer.concat(chunks, totalBytes).toString("base64");
+  });
 }
 
 async function downloadImageAsBase64(rawUrl: string): Promise<string> {
@@ -259,52 +414,48 @@ async function downloadImageAsBase64(rawUrl: string): Promise<string> {
     throw new Error("Failed to download generated image: invalid URL");
   }
 
-  await assertSafeImageUrl(currentUrl);
-  const signal = AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS);
+  assertSafeImageUrlSyntax(currentUrl);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException("The operation timed out", "TimeoutError"));
+  }, IMAGE_DOWNLOAD_TIMEOUT_MS);
 
   try {
     for (let redirects = 0; ; redirects += 1) {
-      const response = await fetch(currentUrl.toString(), {
-        redirect: "manual",
-        signal,
-      });
+      const result = await requestHttpsOnce(currentUrl, controller.signal);
 
-      if (REDIRECT_STATUSES.has(response.status)) {
-        await response.body?.cancel().catch(() => {});
-        if (redirects >= MAX_IMAGE_DOWNLOAD_REDIRECTS) {
-          throw new Error("Failed to download generated image: too many redirects");
-        }
-        const location = response.headers?.get?.("location");
-        if (!location) {
-          throw new Error(`Failed to download generated image: redirect HTTP ${response.status} missing Location header`);
-        }
-
-        let nextUrl: URL;
-        try {
-          nextUrl = new URL(location, currentUrl);
-        } catch {
-          throw new Error("Failed to download generated image: invalid redirect URL");
-        }
-
-        await assertSafeImageUrl(nextUrl);
-        currentUrl = nextUrl;
-        continue;
+      if (result.kind === "ok") {
+        return result.base64;
       }
 
-      if (!response.ok) {
-        await response.body?.cancel().catch(() => {});
-        throw new Error(`Failed to download generated image: HTTP ${response.status}`);
+      if (redirects >= MAX_IMAGE_DOWNLOAD_REDIRECTS) {
+        throw new Error("Failed to download generated image: too many redirects");
       }
 
-      return await readBoundedResponseBase64(response, signal);
+      if (!result.location) {
+        throw new Error(`Failed to download generated image: redirect HTTP ${result.statusCode} missing Location header`);
+      }
+
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(result.location, currentUrl);
+      } catch {
+        throw new Error("Failed to download generated image: invalid redirect URL");
+      }
+
+      assertSafeImageUrlSyntax(nextUrl);
+      currentUrl = nextUrl;
     }
   } catch (error) {
-    if (isAbortError(error)) {
+    if (isAbortError(error) || controller.signal.aborted) {
       throw new Error(`Failed to download generated image: request timed out after ${IMAGE_DOWNLOAD_TIMEOUT_MS}ms`, {
         cause: error,
       });
     }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

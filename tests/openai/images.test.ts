@@ -1,5 +1,9 @@
+import { EventEmitter } from "node:events";
+import type { IncomingHttpHeaders } from "node:http";
+import type { RequestOptions } from "node:https";
+import type { LookupAddress } from "node:dns";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { editImageBase64, generateImageBase64, MAX_IMAGE_DOWNLOAD_BYTES } from "@/lib/openai/images";
+import { editImageBase64, generateImageBase64, MAX_IMAGE_DOWNLOAD_BYTES, safeLookup } from "@/lib/openai/images";
 
 vi.mock("server-only", () => ({}));
 
@@ -10,6 +14,15 @@ const dnsMocks = vi.hoisted(() => ({
 vi.mock("node:dns/promises", () => ({
   default: { lookup: dnsMocks.lookup },
   lookup: dnsMocks.lookup,
+}));
+
+const httpsMocks = vi.hoisted(() => ({
+  request: vi.fn(),
+}));
+
+vi.mock("node:https", () => ({
+  default: { request: httpsMocks.request },
+  request: httpsMocks.request,
 }));
 
 const openaiMocks = vi.hoisted(() => {
@@ -29,37 +42,193 @@ vi.mock("openai", () => ({
   default: openaiMocks.OpenAI,
 }));
 
-function createStreamResponse(
-  chunks: Uint8Array[],
-  init: { status?: number; headers?: Record<string, string>; onCancel?: () => void } = {},
-) {
-  const status = init.status ?? 200;
-  let index = 0;
-  const body = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (index < chunks.length) {
-        controller.enqueue(chunks[index]);
-        index += 1;
-      } else {
-        controller.close();
-      }
-    },
-    cancel() {
-      init.onCancel?.();
-    },
-  });
+interface MockHttpsPlan {
+  statusCode?: number;
+  headers?: IncomingHttpHeaders;
+  chunks?: Uint8Array[];
+  /** Emit chunks one-by-one until destroyed (used to test streaming limit cancellation). */
+  repeatChunk?: { chunk: Uint8Array; maxCount: number; onEmit?: () => void };
+  /** Emit request error after lookup succeeds (e.g. AbortError / TimeoutError). */
+  requestError?: unknown;
+  /** Emit response error mid-stream. */
+  responseError?: unknown;
+  /** Keep response open without ending (used with fake timers for timeout test). */
+  hang?: boolean;
+  /** Controls whether the mocked net.connect invokes `options.lookup` with `all: true` or single-address mode. */
+  lookupAll?: boolean;
+  /** Captures the pinned IP(s) returned by `options.lookup`. */
+  onPinnedAddress?: (result: string | LookupAddress[], family?: number) => void;
+  onDestroy?: () => void;
+}
 
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: new Headers(init.headers),
-    body,
+function createFakeHttpsRequest(plan: MockHttpsPlan) {
+  return (url: URL | string, options: RequestOptions, callback?: (res: EventEmitter) => void) => {
+    const targetUrl = typeof url === "string" ? new URL(url) : url;
+    const req = new EventEmitter() as EventEmitter & {
+      destroyed: boolean;
+      destroy: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+    };
+    req.destroyed = false;
+    req.destroy = vi.fn(() => {
+      if (!req.destroyed) {
+        req.destroyed = true;
+        plan.onDestroy?.();
+      }
+      return req;
+    });
+
+    req.end = vi.fn(() => {
+      const proceedAfterLookup = () => {
+        if (req.destroyed) return;
+
+        if (plan.requestError !== undefined) {
+          queueMicrotask(() => {
+            if (!req.destroyed) {
+              req.emit("error", plan.requestError);
+            }
+          });
+          return;
+        }
+
+        const res = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: IncomingHttpHeaders;
+          complete: boolean;
+          destroyed: boolean;
+          resume: ReturnType<typeof vi.fn>;
+          destroy: ReturnType<typeof vi.fn>;
+        };
+        res.statusCode = plan.statusCode ?? 200;
+        res.headers = plan.headers ?? {};
+        res.complete = false;
+        res.destroyed = false;
+        res.resume = vi.fn(() => res);
+        res.destroy = vi.fn(() => {
+          res.destroyed = true;
+          return res;
+        });
+
+        queueMicrotask(() => {
+          if (req.destroyed) return;
+          callback?.(res);
+
+          if (res.destroyed || req.destroyed || plan.hang) {
+            return;
+          }
+
+          if (plan.responseError !== undefined) {
+            queueMicrotask(() => {
+              if (!res.destroyed && !req.destroyed) {
+                res.emit("error", plan.responseError);
+              }
+            });
+            return;
+          }
+
+          if (plan.repeatChunk) {
+            const { chunk, maxCount, onEmit } = plan.repeatChunk;
+            for (let i = 0; i < maxCount; i += 1) {
+              if (res.destroyed || req.destroyed) break;
+              onEmit?.();
+              res.emit("data", Buffer.from(chunk));
+            }
+            if (!res.destroyed && !req.destroyed) {
+              res.complete = true;
+              res.emit("end");
+            }
+            return;
+          }
+
+          for (const chunk of plan.chunks ?? []) {
+            if (res.destroyed || req.destroyed) break;
+            res.emit("data", Buffer.from(chunk));
+          }
+          if (!res.destroyed && !req.destroyed) {
+            res.complete = true;
+            res.emit("end");
+          }
+        });
+      };
+
+      const lookupFn = options.lookup;
+      if (lookupFn) {
+        const lookupOpts = plan.lookupAll ? { all: true } : {};
+        lookupFn(targetUrl.hostname, lookupOpts, (err, address, family) => {
+          if (err) {
+            queueMicrotask(() => {
+              if (!req.destroyed) {
+                req.emit("error", err);
+              }
+            });
+            return;
+          }
+          plan.onPinnedAddress?.(address, family);
+          proceedAfterLookup();
+        });
+      } else {
+        proceedAfterLookup();
+      }
+    });
+
+    return req;
   };
 }
+
+describe("safeLookup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dnsMocks.lookup.mockReset();
+    httpsMocks.request.mockReset();
+  });
+
+  it("pins validated public IPs for both single-address and all-address lookup signatures", async () => {
+    dnsMocks.lookup.mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+    ]);
+
+    const singleResult = await new Promise<{ address: string | LookupAddress[]; family?: number }>(
+      (resolve, reject) => {
+        safeLookup("cdn.relay.example.com", {}, (err, address, family) => {
+          if (err) reject(err);
+          else resolve({ address, family });
+        });
+      },
+    );
+    expect(singleResult).toEqual({ address: "93.184.216.34", family: 4 });
+
+    const allResult = await new Promise<string | LookupAddress[]>((resolve, reject) => {
+      safeLookup("cdn.relay.example.com", { all: true }, (err, addresses) => {
+        if (err) reject(err);
+        else resolve(addresses);
+      });
+    });
+    expect(allResult).toEqual([
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+    ]);
+  });
+
+  it("rejects private IPs inside safeLookup callback", async () => {
+    dnsMocks.lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }]);
+
+    await expect(
+      new Promise((resolve, reject) => {
+        safeLookup("rebind.example.com", { all: true }, (err, addresses) => {
+          if (err) reject(err);
+          else resolve(addresses);
+        });
+      }),
+    ).rejects.toThrow("resolved IP address is not allowed");
+  });
+});
 
 describe("generateImageBase64", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dnsMocks.lookup.mockReset();
+    httpsMocks.request.mockReset();
     dnsMocks.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
     process.env.OPENAI_API_KEY = "relay-key";
     process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
@@ -77,21 +246,19 @@ describe("generateImageBase64", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
 
   it("passes an optional OpenAI-compatible relay base URL and png output format to the SDK", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
     const image = await generateImageBase64({
       prompt: "A premium product image",
       size: "1024x1024",
     });
 
     expect(image).toBe("image-base64");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(httpsMocks.request).not.toHaveBeenCalled();
     expect(dnsMocks.lookup).not.toHaveBeenCalled();
     expect(openaiMocks.OpenAI).toHaveBeenCalledWith({
       apiKey: "relay-key",
@@ -108,11 +275,23 @@ describe("generateImageBase64", () => {
     );
   });
 
-  it("downloads relay hosted HTTPS image URLs with manual redirects and encodes streamed bytes as base64", async () => {
+  it("pins the validated DNS IP via a single lookup per hop to prevent DNS rebinding", async () => {
     const chunkA = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
     const chunkB = Uint8Array.from([0x0d, 0x0a, 0x1a, 0x0a]);
-    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse([chunkA, chunkB]));
-    vi.stubGlobal("fetch", fetchMock);
+    const pinned: Array<{ address: string | LookupAddress[]; family?: number }> = [];
+
+    // Even if a subsequent DNS lookup would rebind to metadata IP, only 1 lookup occurs per hop.
+    dnsMocks.lookup
+      .mockResolvedValueOnce([{ address: "93.184.216.34", family: 4 }])
+      .mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }]);
+
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
+        chunks: [chunkA, chunkB],
+        lookupAll: true,
+        onPinnedAddress: (address, family) => pinned.push({ address, family }),
+      }),
+    );
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/generated.png" }],
     });
@@ -123,17 +302,22 @@ describe("generateImageBase64", () => {
     });
 
     expect(image).toBe(Buffer.concat([chunkA, chunkB]).toString("base64"));
+    expect(dnsMocks.lookup).toHaveBeenCalledTimes(1);
     expect(dnsMocks.lookup).toHaveBeenCalledWith("cdn.relay.example.com", { all: true });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://cdn.relay.example.com/generated.png",
-      expect.objectContaining({ redirect: "manual", signal: expect.any(AbortSignal) }),
+    expect(pinned).toEqual([{ address: [{ address: "93.184.216.34", family: 4 }], family: undefined }]);
+    expect(httpsMocks.request).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({
+        method: "GET",
+        agent: false,
+        lookup: safeLookup,
+        signal: expect.any(AbortSignal),
+      }),
+      expect.any(Function),
     );
   });
 
   it("rejects non-HTTPS protocols before issuing any network request", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
     for (const url of [
       "http://cdn.relay.example.com/generated.png",
       "file:///etc/passwd",
@@ -145,16 +329,15 @@ describe("generateImageBase64", () => {
       );
     }
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(httpsMocks.request).not.toHaveBeenCalled();
+    expect(dnsMocks.lookup).not.toHaveBeenCalled();
   });
 
   it("rejects localhost, .local, and private/loopback/metadata IP literals", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
     const blockedUrls = [
       "https://localhost/image.png",
       "https://printer.local/image.png",
+      "https://metadata.google.internal/computeMetadata/v1/",
       "https://169.254.169.254/latest/meta-data/",
       "https://127.0.0.1/internal.png",
       "https://10.0.0.5/internal.png",
@@ -174,14 +357,12 @@ describe("generateImageBase64", () => {
       await expect(generateImageBase64({ prompt: "ssrf", size: "1024x1024" })).rejects.toThrow(/not allowed/);
     }
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(httpsMocks.request).not.toHaveBeenCalled();
     expect(dnsMocks.lookup).not.toHaveBeenCalled();
   });
 
-  it("rejects hostnames whose DNS lookup returns any private, loopback, or metadata IP", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("rejects hostnames when safeLookup resolves any private, loopback, or metadata IP", async () => {
+    const onPinnedAddress = vi.fn();
     const resolvedSets = [
       [{ address: "169.254.169.254", family: 4 }],
       [
@@ -194,6 +375,7 @@ describe("generateImageBase64", () => {
 
     for (const records of resolvedSets) {
       dnsMocks.lookup.mockResolvedValueOnce(records);
+      httpsMocks.request.mockImplementationOnce(createFakeHttpsRequest({ onPinnedAddress }));
       openaiMocks.generate.mockResolvedValueOnce({
         data: [{ url: "https://sneaky.relay.example.com/image.png" }],
       });
@@ -203,21 +385,19 @@ describe("generateImageBase64", () => {
       );
     }
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onPinnedAddress).not.toHaveBeenCalled();
   });
 
   it("follows up to 3 validated HTTPS redirects and blocks redirects to private or non-HTTPS targets", async () => {
     const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createStreamResponse([], { status: 302, headers: { location: "https://cdn-1.example.com/hop1.png" } }),
+    httpsMocks.request
+      .mockImplementationOnce(
+        createFakeHttpsRequest({ statusCode: 302, headers: { location: "https://cdn-1.example.com/hop1.png" } }),
       )
-      .mockResolvedValueOnce(
-        createStreamResponse([], { status: 302, headers: { location: "https://cdn-2.example.com/hop2.png" } }),
+      .mockImplementationOnce(
+        createFakeHttpsRequest({ statusCode: 302, headers: { location: "https://cdn-2.example.com/hop2.png" } }),
       )
-      .mockResolvedValueOnce(createStreamResponse([pngBytes]));
-    vi.stubGlobal("fetch", fetchMock);
+      .mockImplementationOnce(createFakeHttpsRequest({ chunks: [pngBytes] }));
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/start.png" }],
     });
@@ -225,14 +405,18 @@ describe("generateImageBase64", () => {
     const image = await generateImageBase64({ prompt: "cdn redirect", size: "1024x1024" });
 
     expect(image).toBe(Buffer.from(pngBytes).toString("base64"));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(httpsMocks.request).toHaveBeenCalledTimes(3);
+    expect(dnsMocks.lookup).toHaveBeenCalledTimes(3);
     expect(dnsMocks.lookup).toHaveBeenCalledWith("cdn-1.example.com", { all: true });
     expect(dnsMocks.lookup).toHaveBeenCalledWith("cdn-2.example.com", { all: true });
 
-    // 302 redirecting to metadata/private IP must be rejected before fetching the Location target.
-    fetchMock.mockReset();
-    fetchMock.mockResolvedValueOnce(
-      createStreamResponse([], { status: 302, headers: { location: "https://169.254.169.254/latest/meta-data/" } }),
+    // 302 redirecting to metadata/private IP literal must be rejected before issuing a second HTTPS request.
+    httpsMocks.request.mockReset();
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
+        statusCode: 302,
+        headers: { location: "https://169.254.169.254/latest/meta-data/" },
+      }),
     );
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/redirect-ssrf.png" }],
@@ -241,12 +425,15 @@ describe("generateImageBase64", () => {
     await expect(generateImageBase64({ prompt: "redirect ssrf", size: "1024x1024" })).rejects.toThrow(
       "IP address is not allowed",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(httpsMocks.request).toHaveBeenCalledTimes(1);
 
-    // 302 downgrading to HTTP must be rejected before fetching the Location target.
-    fetchMock.mockReset();
-    fetchMock.mockResolvedValueOnce(
-      createStreamResponse([], { status: 302, headers: { location: "http://cdn.relay.example.com/downgrade.png" } }),
+    // 302 downgrading to HTTP must be rejected before issuing a second HTTPS request.
+    httpsMocks.request.mockReset();
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
+        statusCode: 302,
+        headers: { location: "http://cdn.relay.example.com/downgrade.png" },
+      }),
     );
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/redirect-http.png" }],
@@ -255,16 +442,22 @@ describe("generateImageBase64", () => {
     await expect(generateImageBase64({ prompt: "redirect http", size: "1024x1024" })).rejects.toThrow(
       "only HTTPS URLs are allowed",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(httpsMocks.request).toHaveBeenCalledTimes(1);
 
-    // 302 redirecting to a domain that resolves to loopback must also be rejected.
-    fetchMock.mockReset();
+    // 302 redirecting to a domain whose safeLookup resolves to loopback must be rejected before connecting.
+    httpsMocks.request.mockReset();
+    const onSecondHopConnected = vi.fn();
     dnsMocks.lookup
       .mockResolvedValueOnce([{ address: "93.184.216.34", family: 4 }])
       .mockResolvedValueOnce([{ address: "127.0.0.1", family: 4 }]);
-    fetchMock.mockResolvedValueOnce(
-      createStreamResponse([], { status: 302, headers: { location: "https://internal.example.com/secret" } }),
-    );
+    httpsMocks.request
+      .mockImplementationOnce(
+        createFakeHttpsRequest({
+          statusCode: 302,
+          headers: { location: "https://internal.example.com/secret" },
+        }),
+      )
+      .mockImplementationOnce(createFakeHttpsRequest({ onPinnedAddress: onSecondHopConnected }));
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/redirect-dns.png" }],
     });
@@ -272,12 +465,12 @@ describe("generateImageBase64", () => {
     await expect(generateImageBase64({ prompt: "redirect dns ssrf", size: "1024x1024" })).rejects.toThrow(
       "resolved IP address is not allowed",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onSecondHopConnected).not.toHaveBeenCalled();
 
     // More than 3 redirect hops must be rejected.
-    fetchMock.mockReset();
-    fetchMock.mockImplementation(async () =>
-      createStreamResponse([], { status: 302, headers: { location: "https://cdn.relay.example.com/loop.png" } }),
+    httpsMocks.request.mockReset();
+    httpsMocks.request.mockImplementation(
+      createFakeHttpsRequest({ statusCode: 302, headers: { location: "https://cdn.relay.example.com/loop.png" } }),
     );
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/loop-start.png" }],
@@ -286,18 +479,18 @@ describe("generateImageBase64", () => {
     await expect(generateImageBase64({ prompt: "too many redirects", size: "1024x1024" })).rejects.toThrow(
       "too many redirects",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(httpsMocks.request).toHaveBeenCalledTimes(4);
   });
 
-  it("rejects oversized responses via Content-Length header before reading the body", async () => {
-    const onCancel = vi.fn();
-    const fetchMock = vi.fn().mockResolvedValue(
-      createStreamResponse([new Uint8Array(16)], {
+  it("rejects oversized responses via Content-Length header and destroys the request immediately", async () => {
+    const onDestroy = vi.fn();
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
         headers: { "content-length": String(MAX_IMAGE_DOWNLOAD_BYTES + 1) },
-        onCancel,
+        chunks: [new Uint8Array(16)],
+        onDestroy,
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/huge.png" }],
     });
@@ -305,29 +498,24 @@ describe("generateImageBase64", () => {
     await expect(generateImageBase64({ prompt: "huge header", size: "1024x1024" })).rejects.toThrow(
       `exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`,
     );
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onDestroy).toHaveBeenCalledTimes(1);
   });
 
-  it("aborts and cancels the stream when streamed chunks exceed the byte limit without Content-Length", async () => {
-    const onCancel = vi.fn();
-    const chunk = new Uint8Array(10 * 1024 * 1024);
-    let pulledChunks = 0;
-    const body = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        pulledChunks += 1;
-        controller.enqueue(chunk);
-      },
-      cancel() {
-        onCancel();
-      },
-    });
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      body,
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("destroys the request when streamed chunks exceed the byte limit without Content-Length", async () => {
+    const onDestroy = vi.fn();
+    let emittedChunks = 0;
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
+        repeatChunk: {
+          chunk: new Uint8Array(10 * 1024 * 1024),
+          maxCount: 10,
+          onEmit: () => {
+            emittedChunks += 1;
+          },
+        },
+        onDestroy,
+      }),
+    );
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/chunked-huge.png" }],
     });
@@ -335,43 +523,49 @@ describe("generateImageBase64", () => {
     await expect(generateImageBase64({ prompt: "huge stream", size: "1024x1024" })).rejects.toThrow(
       `exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`,
     );
-    expect(onCancel).toHaveBeenCalledTimes(1);
-    expect(pulledChunks).toBeLessThanOrEqual(4);
+    expect(onDestroy).toHaveBeenCalledTimes(1);
+    expect(emittedChunks).toBe(3);
   });
 
-  it("throws a clear timeout error when image download aborts or times out", async () => {
-    const abortError = new DOMException("The operation was aborted", "AbortError");
-    const fetchMock = vi.fn().mockRejectedValueOnce(abortError);
-    vi.stubGlobal("fetch", fetchMock);
+  it("throws a clear timeout error on AbortError, TimeoutError, and 60s deadline expiry", async () => {
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
+        requestError: new DOMException("The operation was aborted", "AbortError"),
+      }),
+    );
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/slow.png" }],
     });
 
-    await expect(generateImageBase64({ prompt: "slow fetch", size: "1024x1024" })).rejects.toThrow(
+    await expect(generateImageBase64({ prompt: "slow request", size: "1024x1024" })).rejects.toThrow(
       "request timed out",
     );
 
-    // Timeout while streaming the response body
-    const timeoutStream = new ReadableStream<Uint8Array>({
-      pull() {
-        return Promise.reject(new DOMException("The operation timed out", "TimeoutError"));
-      },
-    });
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      body: timeoutStream,
-    });
+    // Response stream TimeoutError
+    httpsMocks.request.mockImplementationOnce(
+      createFakeHttpsRequest({
+        responseError: new DOMException("The operation timed out", "TimeoutError"),
+      }),
+    );
 
     await expect(generateImageBase64({ prompt: "slow stream", size: "1024x1024" })).rejects.toThrow(
       "request timed out",
     );
+
+    // 60s AbortController timeout firing while response hangs
+    vi.useFakeTimers();
+    const onDestroy = vi.fn();
+    httpsMocks.request.mockImplementationOnce(createFakeHttpsRequest({ hang: true, onDestroy }));
+
+    const pending = generateImageBase64({ prompt: "hung stream", size: "1024x1024" });
+    const assertion = expect(pending).rejects.toThrow("request timed out");
+    await vi.advanceTimersByTimeAsync(60_000);
+    await assertion;
+    expect(onDestroy).toHaveBeenCalledTimes(1);
   });
 
   it("throws a clear error when downloading a hosted image URL fails with non-2xx", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse([], { status: 502 }));
-    vi.stubGlobal("fetch", fetchMock);
+    httpsMocks.request.mockImplementationOnce(createFakeHttpsRequest({ statusCode: 502 }));
     openaiMocks.generate.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/missing.png" }],
     });
@@ -424,6 +618,8 @@ describe("generateImageBase64", () => {
 describe("editImageBase64", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dnsMocks.lookup.mockReset();
+    httpsMocks.request.mockReset();
     dnsMocks.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
     process.env.OPENAI_API_KEY = "relay-key";
     process.env.IMAGE_PROVIDER = "openai";
@@ -438,18 +634,16 @@ describe("editImageBase64", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
 
   it("edits via the SDK images endpoint with png output format", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
     const image = await editImageBase64({ prompt: "make it blue", images: ["aGk="] });
 
     expect(image).toBe("edited-base64");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(httpsMocks.request).not.toHaveBeenCalled();
     expect(openaiMocks.edit).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: "make it blue",
@@ -458,10 +652,9 @@ describe("editImageBase64", () => {
     );
   });
 
-  it("downloads relay hosted image URLs for edited images", async () => {
+  it("downloads relay hosted image URLs for edited images with pinned DNS lookup", async () => {
     const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02]);
-    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse([pngBytes]));
-    vi.stubGlobal("fetch", fetchMock);
+    httpsMocks.request.mockImplementationOnce(createFakeHttpsRequest({ chunks: [pngBytes] }));
     openaiMocks.edit.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/edited.png" }],
     });
@@ -469,15 +662,16 @@ describe("editImageBase64", () => {
     const image = await editImageBase64({ prompt: "make it blue", images: ["aGk="] });
 
     expect(image).toBe(Buffer.from(pngBytes).toString("base64"));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://cdn.relay.example.com/edited.png",
-      expect.objectContaining({ redirect: "manual", signal: expect.any(AbortSignal) }),
+    expect(dnsMocks.lookup).toHaveBeenCalledTimes(1);
+    expect(httpsMocks.request).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ agent: false, lookup: safeLookup }),
+      expect.any(Function),
     );
   });
 
   it("throws when edited image URL download returns non-2xx or payload has no image", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse([], { status: 503 }));
-    vi.stubGlobal("fetch", fetchMock);
+    httpsMocks.request.mockImplementationOnce(createFakeHttpsRequest({ statusCode: 503 }));
     openaiMocks.edit.mockResolvedValue({
       data: [{ url: "https://cdn.relay.example.com/edited-503.png" }],
     });
