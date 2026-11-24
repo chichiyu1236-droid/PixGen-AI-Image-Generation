@@ -3,8 +3,26 @@ import Image from "next/image";
 import Link from "next/link";
 import { BrandMark } from "@/components/app-shell";
 import { LoginForm } from "@/components/login-form";
+import { getSafeNextPath } from "@/lib/auth/redirect";
 
-export default function LoginPage() {
+type LoginPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getSearchValue(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const value = searchParams[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const safeNext = getSafeNextPath(getSearchValue(resolvedSearchParams, "next"));
+  const errorCode = getSearchValue(resolvedSearchParams, "error");
+  const resetSuccess = getSearchValue(resolvedSearchParams, "reset") === "success";
+
   return (
     <main className="grid min-h-screen bg-[#f6f3ea] text-[#171916] lg:grid-cols-[1.08fr_0.92fr]">
       {/* Left Column: Light-Toned Oil Painting Editorial Showcase Plate */}
@@ -102,15 +120,26 @@ export default function LoginPage() {
             登录后开始生成
           </h1>
           <p className="mt-3 text-sm leading-6 text-[#484e45]">
-            支持 Google 或邮箱登录，新账号送 5 张试用积分（一次性，不刷新）。
+            支持国内邮箱验证码免密直连或密码登录，新账号自动获赠 5 张试用积分（一次性，不刷新）。
           </p>
 
           <div className="mt-7">
-            <LoginForm />
+            <LoginForm next={safeNext} initialError={errorCode} resetSuccess={resetSuccess} />
           </div>
         </div>
 
-        <p className="text-center text-xs text-[#92978b]">PixGen</p>
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-[#6d7368]">
+          <span className="text-[#92978b]">PixGen</span>
+          <span aria-hidden className="text-[#171916]/15">
+            ·
+          </span>
+          <Link className="underline-offset-4 transition hover:text-[#171916] hover:underline" href="/terms">
+            服务条款
+          </Link>
+          <Link className="underline-offset-4 transition hover:text-[#171916] hover:underline" href="/privacy">
+            隐私政策
+          </Link>
+        </div>
       </section>
     </main>
   );

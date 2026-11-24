@@ -14,7 +14,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BrandMark } from "@/components/app-shell";
-import { GoogleLoginButton } from "@/components/auth-button";
 import { formatFenAsCny } from "@/lib/billing/money";
 import { membershipPlans, YEARLY_DISCOUNT_PERCENT } from "@/lib/billing/plans";
 
@@ -380,7 +379,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                 </Link>
               </>
             ) : (
-              <GoogleLoginButton className="inline-flex items-center gap-2 rounded-full bg-[#171916] px-4 py-2 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]" />
+              <Link
+                className="inline-flex items-center gap-1 rounded-full bg-[#171916] px-4 py-2 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"
+                href="/login"
+              >
+                登录 / 注册
+                <ChevronRight size={15} aria-hidden />
+              </Link>
             )}
           </div>
         </nav>
@@ -439,7 +444,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                   <ArrowRight size={16} aria-hidden />
                 </Link>
               ) : (
-                <GoogleLoginButton className="inline-flex items-center gap-2 rounded-full bg-[#171916] px-7 py-2.5 text-sm font-medium text-[#faf7ef] shadow-[0_14px_34px_rgba(23,25,22,0.18)] transition hover:bg-[#2a2e28]" />
+                <Link
+                  className="inline-flex items-center gap-2 rounded-full bg-[#171916] px-7 py-2.5 text-sm font-medium text-[#faf7ef] shadow-[0_14px_34px_rgba(23,25,22,0.18)] transition hover:bg-[#2a2e28]"
+                  href="/login"
+                >
+                  免费开始生成
+                  <ArrowRight size={16} aria-hidden />
+                </Link>
               )}
               <Link
                 className="inline-flex items-center gap-2 rounded-full border border-[#171916]/15 bg-[#fbf9f3]/90 px-6 py-2.5 text-sm font-medium text-[#171916] backdrop-blur-md transition hover:border-[#171916]/30 hover:bg-[#fbf9f3]"
@@ -1025,7 +1036,13 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
                   <ArrowRight size={16} aria-hidden />
                 </Link>
               ) : (
-                <GoogleLoginButton className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-8 py-3.5 text-sm font-medium text-[#faf7ef] shadow-[0_14px_34px_rgba(23,25,22,0.18)] transition hover:bg-[#2a2e28]" />
+                <Link
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#171916] px-8 py-3.5 text-sm font-medium text-[#faf7ef] shadow-[0_14px_34px_rgba(23,25,22,0.18)] transition hover:bg-[#2a2e28]"
+                  href="/login"
+                >
+                  免费开始生成
+                  <ArrowRight size={16} aria-hidden />
+                </Link>
               )}
             </div>
           </div>
@@ -1044,6 +1061,12 @@ export function LandingPage({ isAuthenticated }: { isAuthenticated: boolean }) {
             </Link>
             <Link className="transition hover:text-[#171916]" href="/upgrade">
               会员方案
+            </Link>
+            <Link className="transition hover:text-[#171916]" href="/terms">
+              服务条款
+            </Link>
+            <Link className="transition hover:text-[#171916]" href="/privacy">
+              隐私政策
             </Link>
             <Link className="transition hover:text-[#171916]" href="/login">
               登录
@@ -1259,7 +1282,9 @@ function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
               开始生成
             </Link>
           ) : (
-            <GoogleLoginButton className={freeCtaClass} />
+            <Link className={freeCtaClass} href="/login">
+              免费登录体验
+            </Link>
           )}
         </div>
         <ul className="mt-7 space-y-2.5 border-t border-[#171916]/10 pt-6 text-sm leading-6 text-[#484e45]">
@@ -1315,7 +1340,10 @@ function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
                   <ArrowRight size={15} aria-hidden />
                 </Link>
               ) : (
-                <GoogleLoginButton next="/upgrade" className={isDarkFocus ? invertedCtaClass : paidCtaClass} />
+                <Link className={isDarkFocus ? invertedCtaClass : paidCtaClass} href="/login?next=/upgrade">
+                  登录后开通
+                  <ArrowRight size={15} aria-hidden />
+                </Link>
               )}
             </div>
             <ul
