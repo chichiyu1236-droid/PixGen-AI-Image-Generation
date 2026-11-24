@@ -279,7 +279,7 @@ export type Database = {
           credits: number;
           amount_fen: number;
           status: "pending" | "paid" | "expired" | "failed" | "flagged";
-          channel: "wechat" | "alipay";
+          channel: "wechat" | "alipay" | "stripe";
           provider: string;
           kind: "pack" | "plan";
           plan_snapshot: Json | null;

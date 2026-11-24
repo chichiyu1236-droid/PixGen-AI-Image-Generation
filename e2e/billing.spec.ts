@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const MOCK_SECRET = process.env.MOCK_APP_SECRET ?? "mock-secret";
+
+const hasRealSupabase = Boolean(
+  supabaseUrl &&
+    supabaseAnonKey &&
+    supabaseServiceKey &&
+    !supabaseUrl.includes("example.supabase.co") &&
+    !supabaseUrl.includes("your-project.supabase.co"),
+);
 
 function projectRef(url: string): string {
   return new URL(url).hostname.split(".")[0];
@@ -33,17 +41,25 @@ function buildCallbackParams(input: { orderId: string; amountFen: number }): Rec
   return { ...params, sign: signParams(params, MOCK_SECRET) };
 }
 
-const admin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+function getAdminClient(): SupabaseClient {
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 test.describe("Billing flow", () => {
+  test.skip(
+    !hasRealSupabase,
+    "Requires real Supabase test credentials (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)",
+  );
+
   const stamp = Date.now();
   const email = `e2e-billing-${stamp}@example.com`;
   const password = `E2e!Bill${stamp}`;
   let userId = "";
 
   test.beforeAll(async () => {
+    const admin = getAdminClient();
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
@@ -55,13 +71,15 @@ test.describe("Billing flow", () => {
 
   test.afterAll(async () => {
     if (userId) {
+      const admin = getAdminClient();
       await admin.auth.admin.deleteUser(userId);
     }
   });
 
-  test("membership checkout -> cashier page -> mock payment -> success", async ({ page }) => {
+  test("membership checkout -> cashier page -> mock payment -> success -> billing ledger", async ({ page }) => {
     // Cold Next.js compiles plus remote-Supabase latency exceed the default 30s.
     test.slow();
+    const admin = getAdminClient();
     const anon = createClient(supabaseUrl, supabaseAnonKey);
     const { data: { session } } = await anon.auth.signInWithPassword({ email, password });
     expect(session).toBeTruthy();
@@ -96,6 +114,11 @@ test.describe("Billing flow", () => {
     await expect(page.getByText("¥19.90")).toBeVisible();
     await expect(page.getByText("100 积分")).toBeVisible();
     await expect(page.getByText("订单有效期剩余")).toBeVisible();
+
+    // Compliance & billing footer links on cashier page.
+    await expect(page.locator('footer a[href="/billing"]')).toBeVisible();
+    await expect(page.locator('footer a[href="/terms"]')).toBeVisible();
+    await expect(page.locator('footer a[href="/privacy"]')).toBeVisible();
 
     // The cashier renders a QR code on desktop and a pay-jump link on mobile.
     if (test.info().project.name === "mobile") {
@@ -133,10 +156,21 @@ test.describe("Billing flow", () => {
       .eq("user_id", userId)
       .eq("type", "membership_grant");
     expect(events!.length).toBeGreaterThanOrEqual(1);
+
+    // Visit /billing to verify the paid order and membership_grant credit ledger entry.
+    await page.goto("/billing");
+    await expect(page.getByRole("heading", { name: "账单与积分明细" })).toBeVisible();
+    await expect(page.getByText("标准月卡").first()).toBeVisible();
+    await expect(page.getByText("已支付").first()).toBeVisible();
+    await expect(page.getByText("会员额度发放").first()).toBeVisible();
+    await expect(page.getByText("+100").first()).toBeVisible();
+    await expect(page.locator('footer a[href="/terms"]')).toBeVisible();
+    await expect(page.locator('footer a[href="/privacy"]')).toBeVisible();
   });
 
   test("cashier page shows 404 for other user's order", async ({ page }) => {
     test.slow();
+    const admin = getAdminClient();
     const { data: { user: otherUser } } = await admin.auth.admin.createUser({
       email: `e2e-other-${stamp}-${Math.floor(Math.random() * 1e6)}@example.com`,
       password: `E2e!Other${stamp}`,

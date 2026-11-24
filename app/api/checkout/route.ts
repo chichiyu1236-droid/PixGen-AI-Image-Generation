@@ -94,8 +94,7 @@ export async function POST(request: Request) {
     .eq("user_id", user.id)
     .eq("pack_id", skuId)
     .eq("provider", provider.id)
-    // TODO(B4): remove cast after widening orders.Row.channel
-    .eq("channel", effectiveChannel as Database["public"]["Tables"]["orders"]["Row"]["channel"])
+    .eq("channel", effectiveChannel)
     .eq("status", "pending")
     .not("pay_url", "is", null)
     .gt("created_at", reuseCutoff)
