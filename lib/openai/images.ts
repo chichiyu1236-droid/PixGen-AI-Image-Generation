@@ -1,5 +1,7 @@
 import "server-only";
 
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { getServerEnv, resolveImageProvider } from "@/lib/env";
@@ -7,10 +9,304 @@ import { markImageProviderHealthy } from "@/lib/openai/provider-health";
 
 /** The relay can hang for minutes before Cloudflare kills it; fail faster. */
 const IMAGE_REQUEST_TIMEOUT_MS = 90_000;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
+const MAX_IMAGE_DOWNLOAD_REDIRECTS = 3;
+export const MAX_IMAGE_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /** 1x1 transparent PNG used by the mock image provider (dev/test only). */
 const MOCK_IMAGE_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+function parseIpv4Octets(ip: string): [number, number, number, number] | null {
+  const parts = ip.split(".");
+  if (parts.length !== 4) {
+    return null;
+  }
+
+  const nums = parts.map((part) => Number(part));
+  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+    return null;
+  }
+
+  return [nums[0], nums[1], nums[2], nums[3]];
+}
+
+function isBlockedIpv4Octets([a, b, c]: [number, number, number, number]): boolean {
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
+  if (a === 127) return true; // 127.0.0.0/8
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 (link-local & cloud metadata)
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return true; // 192.0.0.0/24, 192.0.2.0/24
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15
+  if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24
+  if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24
+  if (a >= 224) return true; // 224.0.0.0/4 multicast & 240.0.0.0/4 reserved
+  return false;
+}
+
+function parseIpv6Groups(ip: string): number[] | null {
+  const halves = ip.toLowerCase().split("::");
+  if (halves.length > 2) {
+    return null;
+  }
+  if (halves.length === 2 && halves[0].includes(".")) {
+    return null;
+  }
+
+  const parseHalf = (part: string): number[] | null => {
+    if (!part) return [];
+    const tokens = part.split(":");
+    const groups: number[] = [];
+
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i];
+      if (token.includes(".")) {
+        if (i !== tokens.length - 1) return null;
+        const octets = parseIpv4Octets(token);
+        if (!octets) return null;
+        groups.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]);
+      } else {
+        if (!/^[0-9a-f]{1,4}$/.test(token)) return null;
+        groups.push(Number.parseInt(token, 16));
+      }
+    }
+
+    return groups;
+  };
+
+  const left = parseHalf(halves[0]);
+  if (!left) return null;
+
+  if (halves.length === 1) {
+    return left.length === 8 ? left : null;
+  }
+
+  const right = parseHalf(halves[1]);
+  if (!right) return null;
+
+  const missing = 8 - (left.length + right.length);
+  if (missing < 1) {
+    return null;
+  }
+
+  return [...left, ...Array<number>(missing).fill(0), ...right];
+}
+
+function ipv4FromTwoGroups(hi: number, lo: number): [number, number, number, number] {
+  return [(hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff];
+}
+
+function isBlockedIpv6Groups(groups: number[]): boolean {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
+
+  // ::/96 (unspecified ::, loopback ::1, deprecated IPv4-compatible)
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return true;
+  // ::ffff:0:0/96 (IPv4-mapped)
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) {
+    return isBlockedIpv4Octets(ipv4FromTwoGroups(g6, g7));
+  }
+  // ::ffff:0:0:0/96 (IPv4-translated)
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) {
+    return isBlockedIpv4Octets(ipv4FromTwoGroups(g6, g7));
+  }
+  // 64:ff9b::/96 (NAT64 well-known) and 64:ff9b:1::/48 (NAT64 local-use)
+  if (g0 === 0x0064 && g1 === 0xff9b) {
+    if (g2 === 0x0001) return true;
+    if (g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+      return isBlockedIpv4Octets(ipv4FromTwoGroups(g6, g7));
+    }
+  }
+  // 100::/64 (discard-only)
+  if (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 0) return true;
+  // 2001::/32 (Teredo) and 2001:db8::/32 (documentation)
+  if (g0 === 0x2001 && (g1 === 0x0000 || g1 === 0x0db8)) return true;
+  // 2002::/16 (6to4)
+  if (g0 === 0x2002) {
+    return isBlockedIpv4Octets(ipv4FromTwoGroups(g1, g2));
+  }
+  // fc00::/7 (ULA), fe80::/10 (link-local), fec0::/10 (site-local), ff00::/8 (multicast)
+  if ((g0 & 0xfe00) === 0xfc00) return true;
+  if ((g0 & 0xffc0) === 0xfe80) return true;
+  if ((g0 & 0xffc0) === 0xfec0) return true;
+  if ((g0 & 0xff00) === 0xff00) return true;
+
+  return false;
+}
+
+function isBlockedIp(ip: string): boolean {
+  const trimmed = ip.trim();
+  if (!trimmed || trimmed.includes("%")) {
+    return true;
+  }
+
+  const version = isIP(trimmed);
+  if (version === 4) {
+    const octets = parseIpv4Octets(trimmed);
+    return octets === null || isBlockedIpv4Octets(octets);
+  }
+  if (version === 6) {
+    const groups = parseIpv6Groups(trimmed);
+    return groups === null || isBlockedIpv6Groups(groups);
+  }
+
+  return true;
+}
+
+async function assertSafeImageUrl(url: URL): Promise<void> {
+  if (url.protocol !== "https:") {
+    throw new Error("Failed to download generated image: only HTTPS URLs are allowed");
+  }
+
+  if (url.username || url.password) {
+    throw new Error("Failed to download generated image: URL credentials are not allowed");
+  }
+
+  const rawHost = url.hostname.toLowerCase();
+  const bareHost = rawHost.startsWith("[") && rawHost.endsWith("]") ? rawHost.slice(1, -1) : rawHost;
+  const host = bareHost.replace(/\.+$/, "");
+
+  if (
+    !host ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    throw new Error("Failed to download generated image: host is not allowed");
+  }
+
+  if (isIP(host) !== 0) {
+    if (isBlockedIp(host)) {
+      throw new Error("Failed to download generated image: IP address is not allowed");
+    }
+    return;
+  }
+
+  const records = await lookup(host, { all: true });
+  if (!records || records.length === 0) {
+    throw new Error("Failed to download generated image: unable to resolve host");
+  }
+
+  for (const record of records) {
+    if (isBlockedIp(record.address)) {
+      throw new Error("Failed to download generated image: resolved IP address is not allowed");
+    }
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
+async function readBoundedResponseBase64(response: Response, signal: AbortSignal): Promise<string> {
+  const contentLengthHeader = response.headers?.get?.("content-length");
+  if (contentLengthHeader !== null && contentLengthHeader !== undefined && contentLengthHeader.trim() !== "") {
+    const contentLength = Number(contentLengthHeader);
+    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_DOWNLOAD_BYTES) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error(`Failed to download generated image: response exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`);
+    }
+  }
+
+  if (!response.body) {
+    throw new Error("Failed to download generated image: empty response body");
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value || value.byteLength === 0) {
+        continue;
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_IMAGE_DOWNLOAD_BYTES) {
+        throw new Error(`Failed to download generated image: response exceeds ${MAX_IMAGE_DOWNLOAD_BYTES} byte limit`);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes).toString("base64");
+}
+
+async function downloadImageAsBase64(rawUrl: string): Promise<string> {
+  let currentUrl: URL;
+  try {
+    currentUrl = new URL(rawUrl);
+  } catch {
+    throw new Error("Failed to download generated image: invalid URL");
+  }
+
+  await assertSafeImageUrl(currentUrl);
+  const signal = AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS);
+
+  try {
+    for (let redirects = 0; ; redirects += 1) {
+      const response = await fetch(currentUrl.toString(), {
+        redirect: "manual",
+        signal,
+      });
+
+      if (REDIRECT_STATUSES.has(response.status)) {
+        await response.body?.cancel().catch(() => {});
+        if (redirects >= MAX_IMAGE_DOWNLOAD_REDIRECTS) {
+          throw new Error("Failed to download generated image: too many redirects");
+        }
+        const location = response.headers?.get?.("location");
+        if (!location) {
+          throw new Error(`Failed to download generated image: redirect HTTP ${response.status} missing Location header`);
+        }
+
+        let nextUrl: URL;
+        try {
+          nextUrl = new URL(location, currentUrl);
+        } catch {
+          throw new Error("Failed to download generated image: invalid redirect URL");
+        }
+
+        await assertSafeImageUrl(nextUrl);
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        throw new Error(`Failed to download generated image: HTTP ${response.status}`);
+      }
+
+      return await readBoundedResponseBase64(response, signal);
+    }
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`Failed to download generated image: request timed out after ${IMAGE_DOWNLOAD_TIMEOUT_MS}ms`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+}
 
 /**
  * Relays differ: some inline the image as base64, others return a hosted URL.
@@ -25,13 +321,7 @@ async function toBase64(data: { b64_json?: string | null; url?: string | null } 
     return null;
   }
 
-  const response = await fetch(data.url, { signal: AbortSignal.timeout(60_000) });
-
-  if (!response.ok) {
-    throw new Error(`Failed to download generated image: HTTP ${response.status}`);
-  }
-
-  return Buffer.from(await response.arrayBuffer()).toString("base64");
+  return downloadImageAsBase64(data.url);
 }
 
 function imageClient() {
