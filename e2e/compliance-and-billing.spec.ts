@@ -12,7 +12,7 @@ test.describe("Auth entry and legal compliance pages", () => {
     await expect(page.getByRole("heading", { name: "登录后开始生成" })).toBeVisible();
 
     // Default tab is 6-digit email OTP login/signup.
-    const otpTab = page.getByRole("tab", { name: "验证码登录" });
+    const otpTab = page.getByRole("tab", { name: "验证码登录 / 注册" });
     const passwordTab = page.getByRole("tab", { name: "密码登录" });
     await expect(otpTab).toHaveAttribute("aria-selected", "true");
     await expect(passwordTab).toHaveAttribute("aria-selected", "false");
@@ -24,16 +24,15 @@ test.describe("Auth entry and legal compliance pages", () => {
     await expect(page.getByText("或使用其他方式")).toBeVisible();
     await expect(page.getByRole("button", { name: /Google/ })).toBeVisible();
 
-    // Switch to password mode and verify signin / signup / forgot-password controls.
+    // Switch to password mode and verify sign-in only + forgot/setup password entry (no separate sign-up).
     await passwordTab.click();
     await expect(passwordTab).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("button", { name: "登录已有账号" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "注册新账号" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "注册新账号" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "使用邮箱密码登录" })).toBeVisible();
 
-    await page.getByRole("button", { name: "忘记密码？" }).click();
-    await expect(page.getByText("通过邮箱重置密码")).toBeVisible();
-    await expect(page.getByRole("button", { name: "发送重置邮件" })).toBeVisible();
+    await page.getByRole("button", { name: "忘记密码 / 首次设置密码？" }).click();
+    await expect(page.getByText("设置 / 重置登录密码")).toBeVisible();
+    await expect(page.getByRole("button", { name: "发送设置 / 重置邮件" })).toBeVisible();
 
     // Compliance links at the bottom of /login.
     await expect(page.locator('a[href="/terms"]')).toBeVisible();
@@ -68,7 +67,7 @@ test.describe("Auth entry and legal compliance pages", () => {
 
   test("/auth/reset-password shows expired link guidance when opened without a recovery session", async ({ page }) => {
     await page.goto("/auth/reset-password");
-    await expect(page.getByRole("heading", { name: "设置新密码" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "设置 / 重置登录密码" })).toBeVisible();
     await expect(page.locator("main").getByRole("alert")).toContainText("重置链接已失效或已过期");
     await expect(page.getByRole("link", { name: "返回登录页" })).toHaveAttribute("href", "/login");
   });

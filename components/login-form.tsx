@@ -10,6 +10,80 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_COOLDOWN_SECONDS = 60;
 
+export type AuthErrorAction =
+  | "send_otp"
+  | "verify_otp"
+  | "password_signin"
+  | "forgot_password";
+
+export type AuthErrorInput =
+  | {
+      message?: string | null;
+      code?: string | null;
+      status?: number | null;
+    }
+  | null
+  | undefined;
+
+export function mapAuthErrorMessage(
+  error: AuthErrorInput,
+  action: AuthErrorAction,
+): string {
+  const rawMessage = (error?.message ?? "").trim();
+  const rawCode = (error?.code ?? "").trim();
+  const combined = `${rawCode} ${rawMessage}`.toLowerCase();
+
+  if (
+    error?.status === 429 ||
+    /rate|limit|seconds|too many requests/i.test(combined)
+  ) {
+    if (
+      action === "send_otp" ||
+      action === "forgot_password" ||
+      /email/i.test(combined)
+    ) {
+      return "邮件发送过于频繁，请稍后再试。";
+    }
+    return "请求过于频繁，请稍后再试。";
+  }
+
+  if (
+    rawCode === "invalid_credentials" ||
+    /invalid login credentials|invalid_credentials/i.test(combined)
+  ) {
+    return "邮箱或密码有误，请检查后重试。";
+  }
+
+  if (
+    rawCode === "email_not_confirmed" ||
+    /email not confirmed|email_not_confirmed/i.test(combined)
+  ) {
+    return "该邮箱尚未完成验证，请先使用「验证码登录 / 注册」验证邮箱。";
+  }
+
+  if (
+    rawCode === "email_address_invalid" ||
+    /unable to validate email|invalid email/i.test(combined)
+  ) {
+    return "请输入有效的邮箱地址。";
+  }
+
+  if (/fetch failed|failed to fetch|network/i.test(combined)) {
+    return "网络连接异常，请稍后重试。";
+  }
+
+  switch (action) {
+    case "send_otp":
+      return "验证码发送失败，请稍后重试。";
+    case "verify_otp":
+      return "验证码错误或已过期，请核对后重试或重新获取。";
+    case "password_signin":
+      return "密码登录失败，请稍后重试。";
+    case "forgot_password":
+      return "重置邮件发送失败，请稍后重试。";
+  }
+}
+
 function mapInitialErrorMessage(code?: string): string | null {
   if (!code) return null;
   switch (code) {
@@ -39,7 +113,7 @@ export function LoginForm({
   const safeNext = getSafeNextPath(next);
 
   const [authTab, setAuthTab] = useState<"otp" | "password">(resetSuccess ? "password" : "otp");
-  const [passwordView, setPasswordView] = useState<"signin" | "signup" | "forgot">("signin");
+  const [passwordView, setPasswordView] = useState<"signin" | "forgot">("signin");
 
   const [email, setEmail] = useState("");
   const [otpToken, setOtpToken] = useState("");
@@ -51,7 +125,7 @@ export function LoginForm({
 
   const [error, setError] = useState<string | null>(() => mapInitialErrorMessage(initialError));
   const [notice, setNotice] = useState<string | null>(() =>
-    resetSuccess ? "密码已重置成功，请使用新密码登录。" : null,
+    resetSuccess ? "密码已设置 / 重置成功，请使用新密码登录。" : null,
   );
 
   const incomingPropsKey = `${initialError ?? ""}|${resetSuccess ? "1" : "0"}`;
@@ -59,7 +133,7 @@ export function LoginForm({
   if (syncedPropsKey !== incomingPropsKey) {
     setSyncedPropsKey(incomingPropsKey);
     setError(mapInitialErrorMessage(initialError));
-    setNotice(resetSuccess ? "密码已重置成功，请使用新密码登录。" : null);
+    setNotice(resetSuccess ? "密码已设置 / 重置成功，请使用新密码登录。" : null);
     if (resetSuccess) {
       setAuthTab("password");
       setPasswordView("signin");
@@ -99,8 +173,7 @@ export function LoginForm({
       });
 
       if (otpError) {
-        const isRateLimit = /rate|seconds|limit/i.test(otpError.message);
-        setError(isRateLimit ? "验证码发送过于频繁，请稍后再试。" : "验证码发送失败，请稍后重试。");
+        setError(mapAuthErrorMessage(otpError, "send_otp"));
         return;
       }
 
@@ -139,7 +212,7 @@ export function LoginForm({
       });
 
       if (verifyError) {
-        setError("验证码错误或已过期，请核对后重试或重新获取。");
+        setError(mapAuthErrorMessage(verifyError, "verify_otp"));
         return;
       }
 
@@ -165,41 +238,18 @@ export function LoginForm({
     setSubmitting(true);
     try {
       const supabase = createSupabaseBrowserClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
 
-      if (passwordView === "signin") {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password,
-        });
-
-        if (signInError) {
-          setError("邮箱或密码有误，请检查后重试。");
-          return;
-        }
-
-        router.push(safeNext);
-        router.refresh();
-      } else {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
-          },
-        });
-
-        if (signUpError) {
-          setError(signUpError.message || "注册失败，请稍后重试。");
-          return;
-        }
-
-        if (data.session) {
-          router.push(safeNext);
-          router.refresh();
-        } else {
-          setNotice("验证邮件已发送，请点击邮件链接确认，或切回「验证码登录」输入邮件中的 6 位验证码完成登录。");
-        }
+      if (signInError) {
+        setError(mapAuthErrorMessage(signInError, "password_signin"));
+        return;
       }
+
+      router.push(safeNext);
+      router.refresh();
     } catch {
       setError("网络连接异常，请稍后重试。");
     } finally {
@@ -213,7 +263,7 @@ export function LoginForm({
 
     const trimmedEmail = email.trim();
     if (!EMAIL_PATTERN.test(trimmedEmail)) {
-      setError("请输入需要找回密码的注册邮箱。");
+      setError("请输入有效的邮箱地址。");
       return;
     }
 
@@ -225,11 +275,11 @@ export function LoginForm({
       });
 
       if (resetError) {
-        setError("重置邮件发送失败，请稍后重试。");
+        setError(mapAuthErrorMessage(resetError, "forgot_password"));
         return;
       }
 
-      setNotice("密码重置邮件已发送，请查收邮箱并点击链接设置新密码。");
+      setNotice("密码设置 / 重置邮件已发送，请查收邮箱并点击链接设置登录密码。");
     } catch {
       setError("网络连接异常，请稍后重试。");
     } finally {
@@ -239,7 +289,7 @@ export function LoginForm({
 
   return (
     <div className="space-y-5">
-      {/* Primary Dual-Mode Switch: 验证码登录 ⇄ 密码登录 */}
+      {/* Primary Dual-Mode Switch: 验证码登录 / 注册 ⇄ 密码登录 */}
       <div
         role="tablist"
         aria-label="登录方式切换"
@@ -259,7 +309,7 @@ export function LoginForm({
               : "text-[#6d7368] hover:text-[#171916]"
           }`}
         >
-          验证码登录
+          验证码登录 / 注册
         </button>
         <button
           type="button"
@@ -346,7 +396,7 @@ export function LoginForm({
           </div>
 
           <p className="text-[11px] leading-5 text-[#6d7368]">
-            未注册邮箱验证通过后自动创建新账号，免密直达工作台。
+            未注册邮箱验证 6 位验证码后自动创建账号并获赠 5 张试用积分。
           </p>
 
           <button
@@ -365,7 +415,7 @@ export function LoginForm({
       ) : passwordView === "forgot" ? (
         <form onSubmit={onForgotPasswordSubmit} className="space-y-3.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-medium text-[#171916]">通过邮箱重置密码</span>
+            <span className="font-medium text-[#171916]">设置 / 重置登录密码</span>
             <button
               type="button"
               onClick={() => {
@@ -379,7 +429,7 @@ export function LoginForm({
           </div>
 
           <label className="grid gap-1.5 text-xs font-medium text-[#484e45]">
-            <span>注册邮箱</span>
+            <span>邮箱地址</span>
             <input
               type="email"
               required
@@ -392,7 +442,7 @@ export function LoginForm({
           </label>
 
           <p className="text-[11px] leading-5 text-[#6d7368]">
-            我们将向该邮箱发送密码重置链接，点击邮件链接即可设置新密码。
+            我们将向该邮箱发送验证链接，点击邮件链接即可设置密码；验证码注册的用户也可通过此入口给邮箱设置登录密码。
           </p>
 
           <button
@@ -405,62 +455,11 @@ export function LoginForm({
             ) : (
               <Mail size={15} aria-hidden />
             )}
-            <span>{submitting ? "正在发送…" : "发送重置邮件"}</span>
+            <span>{submitting ? "正在发送…" : "发送设置 / 重置邮件"}</span>
           </button>
         </form>
       ) : (
         <form onSubmit={onPasswordSubmit} className="space-y-3.5">
-          <div className="flex items-center justify-between text-xs">
-            <div className="inline-flex items-center gap-3">
-              <button
-                type="button"
-                aria-pressed={passwordView === "signin"}
-                onClick={() => {
-                  setPasswordView("signin");
-                  clearFeedback();
-                }}
-                className={`font-medium transition ${
-                  passwordView === "signin"
-                    ? "text-[#171916] underline decoration-[#566c58] decoration-2 underline-offset-4"
-                    : "text-[#6d7368] hover:text-[#171916]"
-                }`}
-              >
-                登录已有账号
-              </button>
-              <span aria-hidden className="text-[#171916]/15">
-                |
-              </span>
-              <button
-                type="button"
-                aria-pressed={passwordView === "signup"}
-                onClick={() => {
-                  setPasswordView("signup");
-                  clearFeedback();
-                }}
-                className={`font-medium transition ${
-                  passwordView === "signup"
-                    ? "text-[#171916] underline decoration-[#566c58] decoration-2 underline-offset-4"
-                    : "text-[#6d7368] hover:text-[#171916]"
-                }`}
-              >
-                注册新账号
-              </button>
-            </div>
-
-            {passwordView === "signin" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setPasswordView("forgot");
-                  clearFeedback();
-                }}
-                className="font-medium text-[#566c58] underline-offset-4 transition hover:text-[#171916] hover:underline"
-              >
-                忘记密码？
-              </button>
-            ) : null}
-          </div>
-
           <label className="grid gap-1.5 text-xs font-medium text-[#484e45]">
             <span>邮箱地址</span>
             <input
@@ -480,13 +479,27 @@ export function LoginForm({
               type="password"
               required
               minLength={6}
-              autoComplete={passwordView === "signin" ? "current-password" : "new-password"}
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="至少 6 位字符"
               className="rounded-2xl border border-[#171916]/12 bg-[#f4f0e5]/75 px-4 py-3 text-sm text-[#171916] outline-none transition placeholder:text-[#92978b] focus:border-[#566c58]/50 focus:bg-[#fbf9f3]"
             />
           </label>
+
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-[11px] text-[#6d7368]">已有账号密码登录</span>
+            <button
+              type="button"
+              onClick={() => {
+                setPasswordView("forgot");
+                clearFeedback();
+              }}
+              className="shrink-0 font-medium text-[#566c58] underline-offset-4 transition hover:text-[#171916] hover:underline"
+            >
+              忘记密码 / 首次设置密码？
+            </button>
+          </div>
 
           <button
             type="submit"
@@ -498,13 +511,7 @@ export function LoginForm({
             ) : (
               <KeyRound size={15} aria-hidden />
             )}
-            <span>
-              {submitting
-                ? "请稍候…"
-                : passwordView === "signin"
-                  ? "使用邮箱密码登录"
-                  : "创建账号"}
-            </span>
+            <span>{submitting ? "请稍候…" : "使用邮箱密码登录"}</span>
           </button>
         </form>
       )}

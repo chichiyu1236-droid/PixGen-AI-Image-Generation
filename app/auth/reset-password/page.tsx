@@ -72,7 +72,14 @@ export default function ResetPasswordPage() {
       const { error: updateError } = await supabase.auth.updateUser({ password });
 
       if (updateError) {
-        setError("新密码设置失败（请勿与原密码完全一致），请修改后重试。");
+        const msg = (updateError.message ?? "").toLowerCase();
+        if (/rate|limit|seconds|too many requests/i.test(msg)) {
+          setError("操作过于频繁，请稍后再试。");
+        } else if (/different from the old password|same_password/i.test(msg)) {
+          setError("新密码不能与原密码相同，请修改后重试。");
+        } else {
+          setError("密码设置失败，请检查密码格式（不少于 6 位）或稍后重试。");
+        }
         return;
       }
 
@@ -101,16 +108,16 @@ export default function ResetPasswordPage() {
 
       <section className="mx-auto my-10 w-full max-w-md rounded-[2rem] border border-[#171916]/10 bg-[#fbf9f3]/94 p-7 shadow-[0_24px_64px_rgba(23,25,22,0.065)] backdrop-blur sm:p-9">
         <p className="font-display text-xs tracking-[0.22em] text-[#566c58] uppercase">
-          RESET PASSWORD
+          PASSWORD SETUP
         </p>
         <h1 className="mt-2.5 font-display text-3xl font-normal leading-tight text-[#171916]">
-          设置新密码
+          设置 / 重置登录密码
         </h1>
 
         {sessionState === "checking" ? (
           <div className="mt-8 flex items-center gap-2.5 text-sm text-[#484e45]">
             <Loader2 size={16} className="animate-spin text-[#566c58]" aria-hidden />
-            <span>正在核验密码重置链接…</span>
+            <span>正在核验登录状态与链接有效性…</span>
           </div>
         ) : sessionState === "invalid" ? (
           <div className="mt-6 space-y-5">
@@ -118,7 +125,7 @@ export default function ResetPasswordPage() {
               role="alert"
               className="rounded-xl border border-[#b45340]/25 bg-[#fdf3f0] px-4 py-3 text-xs leading-6 text-[#8a3222]"
             >
-              重置链接已失效或已过期。请返回登录页，在「密码登录 → 忘记密码？」中重新发送重置邮件。
+              重置链接已失效或已过期。请返回登录页，在「密码登录 → 忘记密码 / 首次设置密码？」中重新发送邮件。
             </p>
             <Link
               href="/login"
@@ -130,7 +137,9 @@ export default function ResetPasswordPage() {
         ) : (
           <>
             <p className="mt-3 text-sm leading-6 text-[#484e45]">
-              {userEmail ? `正在为账号 ${userEmail} 更新密码。` : "请输入不少于 6 位的新密码。"}
+              {userEmail
+                ? `正在为账号 ${userEmail} 设置或重置登录密码，保存后可使用邮箱密码直接登录。`
+                : "请输入不少于 6 位的登录密码，保存后可使用邮箱密码直接登录。"}
             </p>
 
             <form onSubmit={onSubmit} className="mt-6 space-y-4">
@@ -181,7 +190,7 @@ export default function ResetPasswordPage() {
                 ) : (
                   <KeyRound size={15} aria-hidden />
                 )}
-                <span>{submitting ? "正在保存…" : "确认修改密码"}</span>
+                <span>{submitting ? "正在保存…" : "确认保存密码"}</span>
               </button>
             </form>
           </>

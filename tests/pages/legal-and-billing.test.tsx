@@ -215,6 +215,9 @@ describe("BillingPage (/billing)", () => {
     expect(ensureUserProfileMock).toHaveBeenCalledTimes(1);
     expect(getCreditBalanceMock).toHaveBeenCalledWith({ __admin: true }, "user-empty");
     expect(screen.getByRole("heading", { name: "账单与积分明细" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "设置 / 修改密码" }).getAttribute("href")).toBe(
+      "/auth/reset-password",
+    );
     expect(screen.getByText("免费体验版")).toBeDefined();
     expect(screen.getByText("暂无订单记录")).toBeDefined();
     expect(screen.getByText("暂无积分变动记录")).toBeDefined();

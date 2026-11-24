@@ -1,4 +1,4 @@
-import { ArrowRight, Coins, Crown, History, Mail, ReceiptText, Sparkles } from "lucide-react";
+import { ArrowRight, Coins, Crown, History, KeyRound, Mail, ReceiptText, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
@@ -194,13 +194,22 @@ export default async function BillingPage() {
               查看当前会员状态、双积分池余额、历史支付订单与每笔积分变动记录。
             </p>
           </div>
-          <Link
-            href="/upgrade"
-            className="inline-flex items-center gap-2 rounded-full bg-[#171916] px-5 py-2.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"
-          >
-            升级或续费会员
-            <ArrowRight size={15} aria-hidden />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/auth/reset-password"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#171916]/12 bg-[#fbf9f3] px-4 py-2.5 text-xs font-medium text-[#484e45] transition hover:border-[#171916]/25 hover:text-[#171916]"
+            >
+              <KeyRound size={14} aria-hidden />
+              设置 / 修改密码
+            </Link>
+            <Link
+              href="/upgrade"
+              className="inline-flex items-center gap-2 rounded-full bg-[#171916] px-5 py-2.5 text-sm font-medium text-[#faf7ef] transition hover:bg-[#2a2e28]"
+            >
+              升级或续费会员
+              <ArrowRight size={15} aria-hidden />
+            </Link>
+          </div>
         </header>
 
         {/* Membership & Dual-Pool Balance Summary */}
