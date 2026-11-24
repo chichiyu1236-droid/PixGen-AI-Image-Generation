@@ -10,12 +10,32 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
 
   // When the auth redirect URL is not on the project allowlist, Supabase falls
-  // back to delivering the OAuth code to the Site URL root. Forward it to the
-  // real callback so the PKCE exchange still completes (cookies are domain-wide).
-  const code = resolvedSearchParams.code;
+  // back to delivering the OAuth code or token_hash to the Site URL root.
+  // Forward them (along with optional `next`) to /auth/callback so session
+  // exchange still completes cleanly.
+  const code = typeof resolvedSearchParams.code === "string" ? resolvedSearchParams.code : "";
+  const tokenHash =
+    typeof resolvedSearchParams.token_hash === "string" ? resolvedSearchParams.token_hash : "";
+  const type = typeof resolvedSearchParams.type === "string" ? resolvedSearchParams.type : "";
+  const next = typeof resolvedSearchParams.next === "string" ? resolvedSearchParams.next : "";
 
-  if (typeof code === "string" && code !== "") {
-    redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
+  if (code !== "") {
+    const params = new URLSearchParams({ code });
+    if (next !== "") {
+      params.set("next", next);
+    }
+    redirect(`/auth/callback?${params.toString()}`);
+  }
+
+  if (tokenHash !== "") {
+    const params = new URLSearchParams({ token_hash: tokenHash });
+    if (type !== "") {
+      params.set("type", type);
+    }
+    if (next !== "") {
+      params.set("next", next);
+    }
+    redirect(`/auth/callback?${params.toString()}`);
   }
 
   const supabase = await createSupabaseServerClient();
