@@ -9,6 +9,7 @@ test-results
 playwright-report
 tsconfig.tsbuildinfo
 .env*
+!.env.example
 .zcode/
 supabase/.temp/
 
