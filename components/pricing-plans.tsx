@@ -1,13 +1,22 @@
 "use client";
 
-import { Check, Loader2, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Check, CreditCard, Loader2, Mail, ShieldCheck, Sparkles, X } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { formatFenAsCny } from "@/lib/billing/money";
 import type { MembershipPlan } from "@/lib/billing/plans";
+import {
+  buildSupportMailto,
+  getSupportEmail,
+  isSafeHttpsUrl,
+  redirectToExternalUrl,
+} from "@/lib/billing/support";
 
-type CheckoutResult = { orderId: string; reused?: boolean } | { error: string };
+type CheckoutResult =
+  | { orderId: string; reused?: boolean; redirectUrl?: string }
+  | { error: string };
 
 const CHANNELS = [
   { id: "wechat" as const, label: "微信支付" },
@@ -47,8 +56,19 @@ function savingsPercent(monthly: MembershipPlan, yearly: MembershipPlan): number
   return Math.round(((fullPrice - yearly.amountFen) / fullPrice) * 100);
 }
 
-export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
+export function PricingPlans({
+  plans,
+  billingProvider = "mock",
+  supportEmail,
+}: {
+  plans: MembershipPlan[];
+  billingProvider?: string;
+  supportEmail?: string;
+}) {
   const router = useRouter();
+  const isStripe = (billingProvider ?? "mock").trim().toLowerCase() === "stripe";
+  const resolvedSupportEmail = (supportEmail ?? getSupportEmail()).trim();
+  const supportMailto = buildSupportMailto(resolvedSupportEmail, { subject: "PixGen 会员购买咨询" });
   const [channel, setChannel] = useState<"wechat" | "alipay">("wechat");
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
@@ -76,13 +96,21 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: plan.id, channel }),
+        body: JSON.stringify({
+          planId: plan.id,
+          channel: isStripe ? "stripe" : channel,
+        }),
       });
-      const body = (await response.json()) as CheckoutResult;
+      const body = (await response.json().catch(() => null)) as CheckoutResult | null;
 
-      if (!response.ok || "error" in body) {
-        const error = "error" in body ? body.error : "unknown";
+      if (!response.ok || !body || "error" in body) {
+        const error = body && "error" in body ? body.error : "unknown";
         setMessage(ERROR_MESSAGES[error] ?? "下单失败，请稍后再试。");
+        return;
+      }
+
+      if (body.redirectUrl && isSafeHttpsUrl(body.redirectUrl)) {
+        redirectToExternalUrl(body.redirectUrl);
         return;
       }
 
@@ -96,7 +124,7 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
 
   return (
     <section className="space-y-8">
-      {isWeChat ? (
+      {isWeChat && !isStripe ? (
         <div className="rounded-2xl border border-[#b48a52]/35 bg-[#f6ebd9] px-5 py-4 text-sm leading-6 text-[#5a411e]">
           检测到你正在微信内打开本页。微信内无法拉起微信支付，请点击右上角「···」选择「在浏览器打开」，或直接使用支付宝支付。
         </div>
@@ -127,24 +155,31 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[#6d7368]">支付方式</span>
-          {CHANNELS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setChannel(item.id)}
-              aria-pressed={channel === item.id}
-              className={`rounded-full px-4 py-2 text-xs font-semibold transition sm:text-sm ${
-                channel === item.id
-                  ? "bg-[#384a3a] text-[#faf7ef]"
-                  : "border border-[#171916]/12 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/30 hover:text-[#171916]"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {isStripe ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-full border border-[#566c58]/20 bg-[#e7eee5]/70 px-4 py-2 text-xs text-[#384a3a]">
+            <CreditCard size={14} className="shrink-0" aria-hidden />
+            <span>Stripe 安全收银台 · 支持支付宝 / 微信支付 / 银行卡（人民币单次付款）</span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[#6d7368]">支付方式</span>
+            {CHANNELS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setChannel(item.id)}
+                aria-pressed={channel === item.id}
+                className={`rounded-full px-4 py-2 text-xs font-semibold transition sm:text-sm ${
+                  channel === item.id
+                    ? "bg-[#384a3a] text-[#faf7ef]"
+                    : "border border-[#171916]/12 bg-[#fbf9f3] text-[#484e45] hover:border-[#171916]/30 hover:text-[#171916]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Three-Column Oil Gallery Pricing Cards */}
@@ -292,10 +327,40 @@ export function PricingPlans({ plans }: { plans: MembershipPlan[] }) {
         ))}
       </div>
 
-      <p className="flex items-center gap-2 text-xs text-[#6d7368]">
-        <ShieldCheck className="h-4 w-4 shrink-0 text-[#566c58]" aria-hidden />
-        会员卡为手动续费：到期前 3 天站内提醒，再次购买即顺延会员期并发放新一期额度，不会自动扣款；每期额度按期有效、不滚存。
-      </p>
+      {/* Pre-Purchase Compliance Notice & Support */}
+      <div className="space-y-2 rounded-2xl border border-[#171916]/10 bg-[#f4f0e5]/75 px-5 py-4 text-xs leading-6 text-[#6d7368]">
+        <p className="flex items-start gap-2">
+          <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[#566c58]" aria-hidden />
+          <span>
+            点击「立即开通」即表示你已阅读并同意{" "}
+            <Link href="/terms" className="font-medium text-[#384a3a] underline underline-offset-4 hover:text-[#171916]">
+              服务条款与退款规则
+            </Link>{" "}
+            及{" "}
+            <Link href="/privacy" className="font-medium text-[#384a3a] underline underline-offset-4 hover:text-[#171916]">
+              隐私政策
+            </Link>
+            。会员卡为人民币单次付费，到期前 3 天站内提醒，不会自动扣款；每期额度按期有效、不滚存。
+          </span>
+        </p>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-6">
+          <Link href="/billing" className="font-medium text-[#484e45] underline underline-offset-4 hover:text-[#171916]">
+            查看历史账单与积分明细
+          </Link>
+          {resolvedSupportEmail ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Mail size={13} className="text-[#566c58]" aria-hidden />
+              客服邮箱：
+              <a
+                href={supportMailto}
+                className="font-medium text-[#384a3a] underline underline-offset-4 hover:text-[#171916]"
+              >
+                {resolvedSupportEmail}
+              </a>
+            </span>
+          ) : null}
+        </p>
+      </div>
     </section>
   );
 }

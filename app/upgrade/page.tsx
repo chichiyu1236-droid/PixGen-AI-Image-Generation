@@ -5,6 +5,7 @@ import { PricingPlans } from "@/components/pricing-plans";
 import { EMPTY_BALANCE, getCreditBalance } from "@/lib/auth/balance";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { membershipPlans } from "@/lib/billing/plans";
+import { getSupportEmail } from "@/lib/billing/support";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -15,13 +16,15 @@ export default async function UpgradePage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/login?next=/upgrade");
   }
 
   await ensureUserProfile(user).catch(() => undefined);
   // evaluate_membership is service-role-only (it writes), so pages must read
   // the balance through the admin client, never the user-scoped one.
   const balance = await getCreditBalance(createSupabaseAdminClient(), user.id).catch(() => EMPTY_BALANCE);
+  const billingProvider = process.env.BILLING_PROVIDER?.trim().toLowerCase() || "mock";
+  const supportEmail = getSupportEmail();
 
   return (
     <AppShell balance={balance}>
@@ -36,7 +39,11 @@ export default async function UpgradePage() {
           </p>
         </header>
 
-        <PricingPlans plans={membershipPlans.map((plan) => ({ ...plan }))} />
+        <PricingPlans
+          plans={membershipPlans.map((plan) => ({ ...plan }))}
+          billingProvider={billingProvider}
+          supportEmail={supportEmail}
+        />
       </main>
     </AppShell>
   );

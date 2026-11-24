@@ -1,6 +1,6 @@
 "use client";
 
-import { Clapperboard, Crown, Images, Menu, Palette, X } from "lucide-react";
+import { Clapperboard, Crown, Images, Menu, Palette, ReceiptText, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/generate", label: "创作工作台", sub: "Studio", icon: Palette },
   { href: "/history", label: "作品图库", sub: "Archive", icon: Images },
   { href: "/upgrade", label: "会员与积分", sub: "Plans", icon: Crown },
+  { href: "/billing", label: "账单与明细", sub: "Billing", icon: ReceiptText },
 ] as const;
 
 export function BrandMark({ href = "/", compact = false }: { href?: string; compact?: boolean }) {
@@ -126,6 +127,18 @@ export function AppShell({
                 视频功能还在开发中，上线后会在这里开放。
               </p>
             ) : null}
+          </div>
+
+          <div className="mt-auto flex items-center gap-3 border-t border-[#171916]/8 px-3 pt-3 text-[11px] text-[#6d7368]">
+            <Link href="/terms" onClick={() => setMobileMenuOpen(false)} className="transition hover:text-[#171916]">
+              服务条款
+            </Link>
+            <span aria-hidden className="text-[#171916]/20">
+              ·
+            </span>
+            <Link href="/privacy" onClick={() => setMobileMenuOpen(false)} className="transition hover:text-[#171916]">
+              隐私政策
+            </Link>
           </div>
         </nav>
 
