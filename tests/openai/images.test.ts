@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 
 vi.mock("server-only", () => ({}));
@@ -38,13 +38,22 @@ describe("generateImageBase64", () => {
     });
   });
 
-  it("passes an optional OpenAI-compatible relay base URL to the SDK", async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("passes an optional OpenAI-compatible relay base URL and png output format to the SDK", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
     const image = await generateImageBase64({
       prompt: "A premium product image",
       size: "1024x1024",
     });
 
     expect(image).toBe("image-base64");
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(openaiMocks.OpenAI).toHaveBeenCalledWith({
       apiKey: "relay-key",
       baseURL: "https://relay.example.com/v1",
@@ -55,8 +64,67 @@ describe("generateImageBase64", () => {
       expect.objectContaining({
         model: "gpt-image2",
         quality: "high",
+        output_format: "png",
       }),
     );
+  });
+
+  it("downloads relay hosted image URLs and encodes the bytes as base64", async () => {
+    const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => pngBytes.buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    openaiMocks.generate.mockResolvedValue({
+      data: [{ url: "https://cdn.relay.example.com/generated.png" }],
+    });
+
+    const image = await generateImageBase64({
+      prompt: "A hosted relay image",
+      size: "1024x1024",
+    });
+
+    expect(image).toBe(Buffer.from(pngBytes).toString("base64"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.relay.example.com/generated.png",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("throws a clear error when downloading a hosted image URL fails with non-2xx", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    openaiMocks.generate.mockResolvedValue({
+      data: [{ url: "https://cdn.relay.example.com/missing.png" }],
+    });
+
+    await expect(
+      generateImageBase64({ prompt: "broken url", size: "1024x1024" }),
+    ).rejects.toThrow("Failed to download generated image: HTTP 502");
+  });
+
+  it("throws a clear error when neither b64_json nor url is returned", async () => {
+    openaiMocks.generate.mockResolvedValue({
+      data: [{}],
+    });
+
+    await expect(
+      generateImageBase64({ prompt: "empty payload", size: "1024x1024" }),
+    ).rejects.toThrow("OpenAI did not return an image.");
+
+    openaiMocks.generate.mockResolvedValue({
+      data: [],
+    });
+
+    await expect(
+      generateImageBase64({ prompt: "empty list", size: "1024x1024" }),
+    ).rejects.toThrow("OpenAI did not return an image.");
   });
 
   it("returns a placeholder without calling the SDK in mock mode", async () => {
@@ -96,11 +164,70 @@ describe("editImageBase64", () => {
     });
   });
 
-  it("edits via the SDK images endpoint", async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("edits via the SDK images endpoint with png output format", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
     const image = await editImageBase64({ prompt: "make it blue", images: ["aGk="] });
 
     expect(image).toBe("edited-base64");
-    expect(openaiMocks.edit).toHaveBeenCalledWith(expect.objectContaining({ prompt: "make it blue" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(openaiMocks.edit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "make it blue",
+        output_format: "png",
+      }),
+    );
+  });
+
+  it("downloads relay hosted image URLs for edited images", async () => {
+    const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02]);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => pngBytes.buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    openaiMocks.edit.mockResolvedValue({
+      data: [{ url: "https://cdn.relay.example.com/edited.png" }],
+    });
+
+    const image = await editImageBase64({ prompt: "make it blue", images: ["aGk="] });
+
+    expect(image).toBe(Buffer.from(pngBytes).toString("base64"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.relay.example.com/edited.png",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("throws when edited image URL download returns non-2xx or payload has no image", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    openaiMocks.edit.mockResolvedValue({
+      data: [{ url: "https://cdn.relay.example.com/edited-503.png" }],
+    });
+
+    await expect(editImageBase64({ prompt: "fail", images: ["aGk="] })).rejects.toThrow(
+      "Failed to download generated image: HTTP 503",
+    );
+
+    openaiMocks.edit.mockResolvedValue({
+      data: [{}],
+    });
+
+    await expect(editImageBase64({ prompt: "empty", images: ["aGk="] })).rejects.toThrow(
+      "OpenAI did not return an edited image.",
+    );
   });
 
   it("passes every reference image and the requested size to the SDK edit endpoint", async () => {

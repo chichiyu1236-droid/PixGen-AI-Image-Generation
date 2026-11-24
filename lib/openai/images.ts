@@ -12,6 +12,28 @@ const IMAGE_REQUEST_TIMEOUT_MS = 90_000;
 const MOCK_IMAGE_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
+/**
+ * Relays differ: some inline the image as base64, others return a hosted URL.
+ * Normalise both shapes to base64 so callers keep a single contract.
+ */
+async function toBase64(data: { b64_json?: string | null; url?: string | null } | undefined) {
+  if (data?.b64_json) {
+    return data.b64_json;
+  }
+
+  if (!data?.url) {
+    return null;
+  }
+
+  const response = await fetch(data.url, { signal: AbortSignal.timeout(60_000) });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download generated image: HTTP ${response.status}`);
+  }
+
+  return Buffer.from(await response.arrayBuffer()).toString("base64");
+}
+
 function imageClient() {
   const env = getServerEnv();
 
@@ -39,9 +61,11 @@ export async function generateImageBase64(input: { prompt: string; size: string 
     quality: "high",
     n: 1,
     size: input.size as "1024x1024" | "1024x1536" | "1536x1024",
+    // Storage and the reference-edit path both assume PNG.
+    output_format: "png",
   });
 
-  const image = response.data?.[0]?.b64_json;
+  const image = await toBase64(response.data?.[0]);
 
   if (!image) {
     throw new Error("OpenAI did not return an image.");
@@ -68,9 +92,10 @@ export async function editImageBase64(input: { prompt: string; images: string[];
     ),
     n: 1,
     ...(input.size ? { size: input.size as "1024x1024" | "1024x1536" | "1536x1024" } : {}),
+    output_format: "png",
   });
 
-  const image = response.data?.[0]?.b64_json;
+  const image = await toBase64(response.data?.[0]);
 
   if (!image) {
     throw new Error("OpenAI did not return an edited image.");
