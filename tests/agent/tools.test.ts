@@ -40,7 +40,14 @@ function queryable(result: { data: unknown }) {
   };
 }
 
-function fakeAdmin(options: { canvasRows?: unknown[]; sourceRow?: unknown | null; rpc?: (...args: unknown[]) => unknown }) {
+function fakeAdmin(options: {
+  canvasRows?: unknown[];
+  sourceRow?: unknown | null;
+  rpc?: (...args: unknown[]) => unknown;
+  storageRemove?: ReturnType<typeof vi.fn>;
+}) {
+  const remove = options.storageRemove ?? vi.fn(async () => ({ data: [], error: null }));
+
   return {
     rpc: vi.fn(options.rpc ?? (async () => ({ data: generationRow, error: null }))),
     from: vi.fn((table: string) => {
@@ -58,6 +65,7 @@ function fakeAdmin(options: { canvasRows?: unknown[]; sourceRow?: unknown | null
           data: { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer },
           error: null,
         })),
+        remove,
       })),
     },
   } as unknown as SupabaseClient<Database>;
@@ -197,5 +205,132 @@ describe("edit_image", () => {
 
     expect(result).toMatchObject({ ok: false, error: "generation_not_found" });
     expect(editImageBase64).not.toHaveBeenCalled();
+  });
+
+  it("decrements ctx.totalCredits after a successful generate_image to stop overspending in the same turn", async () => {
+    const admin = fakeAdmin({});
+    const ctx = context(admin, { totalCredits: 1 });
+
+    await runAgentTool(
+      "build_prompt",
+      {
+        imageType: "ecommerce_hero",
+        aspectRatio: "square",
+        style: "premium_minimal",
+        scene: "studio",
+        whitespace: "balanced",
+        subject: "护肤品海报",
+        extra: "",
+      },
+      ctx,
+    );
+
+    const first = await runAgentTool("generate_image", {}, ctx);
+    expect(first.ok).toBe(true);
+    expect(ctx.totalCredits).toBe(0);
+
+    const second = await runAgentTool("generate_image", {}, ctx);
+    expect(second).toEqual({ ok: false, error: "insufficient_credits", retryable: false });
+    expect(generateImageBase64).toHaveBeenCalledTimes(1);
+  });
+
+  it("decrements ctx.totalCredits after a successful edit_image to stop overspending on multi-variant turns", async () => {
+    const admin = fakeAdmin({ sourceRow });
+    const ctx = context(admin, { totalCredits: 1 });
+
+    const first = await runAgentTool("edit_image", { generationId: GEN_1, instruction: "换成海洋蓝", kind: "variant" }, ctx);
+    expect(first.ok).toBe(true);
+    expect(ctx.totalCredits).toBe(0);
+
+    const second = await runAgentTool("edit_image", { generationId: GEN_1, instruction: "换成森林绿", kind: "variant" }, ctx);
+    expect(second).toEqual({ ok: false, error: "insufficient_credits", retryable: false });
+    expect(editImageBase64).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes orphaned Storage objects when record_successful_generation fails in generate_image and edit_image", async () => {
+    const removeGen = vi.fn(async () => ({ data: [], error: null }));
+    const adminGen = fakeAdmin({
+      storageRemove: removeGen,
+      rpc: async () => ({ data: null, error: { message: "insufficient_credits" } }),
+    });
+    const ctxGen = context(adminGen, { totalCredits: 2 });
+
+    await runAgentTool(
+      "build_prompt",
+      {
+        imageType: "ecommerce_hero",
+        aspectRatio: "square",
+        style: "premium_minimal",
+        scene: "studio",
+        whitespace: "balanced",
+        subject: "护肤品海报",
+        extra: "",
+      },
+      ctxGen,
+    );
+
+    const genResult = await runAgentTool("generate_image", {}, ctxGen);
+    expect(genResult).toEqual({ ok: false, error: "insufficient_credits", retryable: false });
+    expect(ctxGen.totalCredits).toBe(0);
+    expect(removeGen).toHaveBeenCalledWith(["user-1/new.png"]);
+
+    const removeEdit = vi.fn(async () => ({ data: [], error: null }));
+    const adminEdit = fakeAdmin({
+      sourceRow,
+      storageRemove: removeEdit,
+      rpc: async () => ({ data: null, error: { message: "db_timeout" } }),
+    });
+    const ctxEdit = context(adminEdit, { totalCredits: 2 });
+
+    const editResult = await runAgentTool("edit_image", { generationId: GEN_1, instruction: "背景换成樱花" }, ctxEdit);
+    expect(editResult).toEqual({ ok: false, error: "generation_record_failed", retryable: true });
+    expect(ctxEdit.totalCredits).toBe(2);
+    expect(removeEdit).toHaveBeenCalledWith(["user-1/new.png"]);
+  });
+
+  it("inherits source aspect_ratio size for portrait and landscape edits and falls back to square for unknown values", async () => {
+    const portraitAdmin = fakeAdmin({ sourceRow: { ...sourceRow, aspect_ratio: "portrait" } });
+    const portraitRpc = portraitAdmin.rpc as ReturnType<typeof vi.fn>;
+
+    const portraitResult = await runAgentTool(
+      "edit_image",
+      { generationId: GEN_1, instruction: "背景换成樱花色调" },
+      context(portraitAdmin),
+    );
+    expect(portraitResult.ok).toBe(true);
+    expect(editImageBase64).toHaveBeenLastCalledWith(expect.objectContaining({ size: "1024x1536" }));
+    expect(portraitRpc).toHaveBeenCalledWith(
+      "record_successful_generation",
+      expect.objectContaining({ p_aspect_ratio: "portrait" }),
+    );
+
+    const landscapeAdmin = fakeAdmin({ sourceRow: { ...sourceRow, aspect_ratio: "landscape" } });
+    const landscapeRpc = landscapeAdmin.rpc as ReturnType<typeof vi.fn>;
+
+    const landscapeResult = await runAgentTool(
+      "edit_image",
+      { generationId: GEN_1, instruction: "背景换成落日余晖" },
+      context(landscapeAdmin),
+    );
+    expect(landscapeResult.ok).toBe(true);
+    expect(editImageBase64).toHaveBeenLastCalledWith(expect.objectContaining({ size: "1536x1024" }));
+    expect(landscapeRpc).toHaveBeenCalledWith(
+      "record_successful_generation",
+      expect.objectContaining({ p_aspect_ratio: "landscape" }),
+    );
+
+    const unknownAdmin = fakeAdmin({ sourceRow: { ...sourceRow, aspect_ratio: "ultrawide_99" } });
+    const unknownRpc = unknownAdmin.rpc as ReturnType<typeof vi.fn>;
+
+    await runAgentTool(
+      "edit_image",
+      { generationId: GEN_1, instruction: "背景换成暖光" },
+      context(unknownAdmin),
+    );
+    expect(editImageBase64).toHaveBeenLastCalledWith(expect.objectContaining({ size: "1024x1024" }));
+    expect(unknownRpc).toHaveBeenCalledWith(
+      "record_successful_generation",
+      expect.objectContaining({ p_aspect_ratio: "square" }),
+    );
   });
 });

@@ -299,7 +299,7 @@ export type Database = {
           credits: number;
           amount_fen: number;
           status?: "pending" | "paid" | "expired" | "failed" | "flagged";
-          channel: "wechat" | "alipay";
+          channel: "wechat" | "alipay" | "stripe";
           provider: string;
           kind?: "pack" | "plan";
           plan_snapshot?: Json | null;
@@ -319,7 +319,7 @@ export type Database = {
           credits?: number;
           amount_fen?: number;
           status?: "pending" | "paid" | "expired" | "failed" | "flagged";
-          channel?: "wechat" | "alipay";
+          channel?: "wechat" | "alipay" | "stripe";
           provider?: string;
           kind?: "pack" | "plan";
           plan_snapshot?: Json | null;
@@ -334,7 +334,7 @@ export type Database = {
         };
         Relationships: [
           {
-            foreignKeyName: "orders_user_id_fkey";
+            foreignKeyName: "orders_user_id_profiles_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";

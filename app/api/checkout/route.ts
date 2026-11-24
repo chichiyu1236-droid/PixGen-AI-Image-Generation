@@ -5,14 +5,17 @@ import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getBillingEnv } from "@/lib/billing/env";
 import { getMembershipPlan } from "@/lib/billing/plans";
 import { getBillingProvider, getWebhookUrl } from "@/lib/billing/provider";
+import { STRIPE_MIN_TTL_MINUTES } from "@/lib/billing/providers/stripe";
+import type { CreatePaymentResult, PayChannel } from "@/lib/billing/providers/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { Database } from "@/types/database";
 
 const checkoutRequestSchema = z
   .object({
     packId: z.string().min(1).optional(),
     planId: z.string().min(1).optional(),
-    channel: z.enum(["wechat", "alipay"]),
+    channel: z.enum(["wechat", "alipay", "stripe"]).optional(),
   })
   .refine((value) => Boolean(value.packId) !== Boolean(value.planId), {
     message: "exactly one of packId or planId is required",
@@ -49,6 +52,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "unknown_sku" }, { status: 404 });
   }
 
+  const provider = getBillingProvider();
+  let effectiveChannel: PayChannel;
+
+  if (provider.id === "stripe") {
+    effectiveChannel = "stripe";
+  } else {
+    if (parsed.data.channel === "stripe") {
+      return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+    }
+    effectiveChannel = parsed.data.channel ?? "wechat";
+  }
+
   const skuId = plan.id;
   const amountFen = plan.amountFen;
   const credits = plan.quotaPerTranche;
@@ -71,14 +86,16 @@ export async function POST(request: Request) {
   const now = new Date();
   const reuseCutoff = new Date(now.getTime() - REUSE_WINDOW_MS).toISOString();
 
-  // Reuse a fresh, still-payable order for the same SKU and channel instead of
-  // stacking duplicates on double clicks.
+  // Reuse a fresh, still-payable order for the same SKU, provider, and channel
+  // instead of stacking duplicates on double clicks.
   const { data: reusable } = await admin
     .from("orders")
-    .select("id")
+    .select("id, pay_url, provider")
     .eq("user_id", user.id)
     .eq("pack_id", skuId)
-    .eq("channel", parsed.data.channel)
+    .eq("provider", provider.id)
+    // TODO(B4): remove cast after widening orders.Row.channel
+    .eq("channel", effectiveChannel as Database["public"]["Tables"]["orders"]["Row"]["channel"])
     .eq("status", "pending")
     .not("pay_url", "is", null)
     .gt("created_at", reuseCutoff)
@@ -88,7 +105,11 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (reusable) {
-    return NextResponse.json({ orderId: reusable.id, reused: true });
+    return NextResponse.json({
+      orderId: reusable.id,
+      reused: true,
+      ...(reusable.provider === "stripe" && reusable.pay_url ? { redirectUrl: reusable.pay_url } : {}),
+    });
   }
 
   const { count: activePending } = await admin
@@ -102,9 +123,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "too_many_pending_orders" }, { status: 409 });
   }
 
-  const provider = getBillingProvider();
   const orderId = randomUUID();
-  const expiresAt = new Date(now.getTime() + getBillingEnv().ORDER_TTL_MINUTES * 60 * 1000).toISOString();
+  const env = getBillingEnv();
+  const effectiveTtlMinutes =
+    provider.id === "stripe" ? Math.max(env.ORDER_TTL_MINUTES, STRIPE_MIN_TTL_MINUTES) : env.ORDER_TTL_MINUTES;
+  const expiresAt = new Date(now.getTime() + effectiveTtlMinutes * 60 * 1000).toISOString();
 
   const { error: insertError } = await admin.from("orders").insert({
     id: orderId,
@@ -113,7 +136,7 @@ export async function POST(request: Request) {
     credits,
     amount_fen: amountFen,
     status: "pending",
-    channel: parsed.data.channel,
+    channel: effectiveChannel,
     provider: provider.id,
     kind: "plan",
     plan_snapshot: planSnapshot,
@@ -125,25 +148,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "order_create_failed" }, { status: 500 });
   }
 
-  let payUrl: string;
+  let payment: CreatePaymentResult;
 
   try {
-    const payment = await provider.createPayment({
+    payment = await provider.createPayment({
       orderId,
       amountFen,
       body: bodyText,
-      channel: parsed.data.channel,
+      channel: effectiveChannel,
       notifyUrl: getWebhookUrl(provider.id),
-      ttlMinutes: getBillingEnv().ORDER_TTL_MINUTES,
+      ttlMinutes: effectiveTtlMinutes,
     });
-    payUrl = payment.payUrl;
   } catch (error) {
     console.error(error);
     await admin.from("orders").update({ status: "failed" }).eq("id", orderId);
     return NextResponse.json({ error: "provider_unavailable" }, { status: 502 });
   }
 
-  const { error: updateError } = await admin.from("orders").update({ pay_url: payUrl }).eq("id", orderId);
+  const orderUpdate: Database["public"]["Tables"]["orders"]["Update"] = {
+    pay_url: payment.payUrl,
+    ...(payment.providerTradeNo ? { provider_trade_no: payment.providerTradeNo } : {}),
+  };
+  const { error: updateError } = await admin.from("orders").update(orderUpdate).eq("id", orderId);
 
   if (updateError) {
     console.error(updateError);
@@ -151,8 +177,14 @@ export async function POST(request: Request) {
   }
 
   console.log(
-    `[billing] checkout order=${orderId} sku=${skuId} kind=plan channel=${parsed.data.channel} provider=${provider.id}`,
+    `[billing] checkout order=${orderId} sku=${skuId} kind=plan channel=${effectiveChannel} provider=${provider.id}`,
   );
 
-  return NextResponse.json({ orderId, reused: false });
+  const redirectUrl = provider.id === "stripe" ? (payment.redirectUrl ?? payment.payUrl) : undefined;
+
+  return NextResponse.json({
+    orderId,
+    reused: false,
+    ...(redirectUrl ? { redirectUrl } : {}),
+  });
 }

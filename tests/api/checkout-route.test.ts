@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/checkout/route";
+import type { CreatePaymentResult } from "@/lib/billing/providers/types";
 
 const state = vi.hoisted(() => ({
   user: { id: "user-1", email: "user@example.com" } as { id: string; email: string } | null,
-  reusableOrder: null as { id: string } | null,
+  providerId: "mock",
+  reusableOrder: null as { id: string; pay_url?: string | null; provider?: string } | null,
+  reuseFilters: [] as Array<{ column: string; value: unknown }>,
   activePendingCount: 0,
   insertError: null as unknown,
   insertCalls: [] as unknown[],
@@ -12,7 +15,11 @@ const state = vi.hoisted(() => ({
 }));
 
 const providerMocks = vi.hoisted(() => ({
-  createPayment: vi.fn(async () => ({ payUrl: "mock://pay/wechat/new-order", providerTradeNo: null, raw: {} })),
+  createPayment: vi.fn<() => Promise<CreatePaymentResult>>(async () => ({
+    payUrl: "mock://pay/wechat/new-order",
+    providerTradeNo: null,
+    raw: {},
+  })),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -26,14 +33,17 @@ vi.mock("@/lib/auth/ensure-profile", () => ({
 }));
 
 vi.mock("@/lib/billing/provider", () => ({
-  getBillingProvider: () => ({ id: "mock", createPayment: providerMocks.createPayment }),
-  getWebhookUrl: () => "http://localhost:3000/api/webhooks/mock",
+  getBillingProvider: () => ({ id: state.providerId, createPayment: providerMocks.createPayment }),
+  getWebhookUrl: (providerId: string) => `http://localhost:3000/api/webhooks/${providerId}`,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => {
     const reuseChain = {
-      eq: () => reuseChain,
+      eq: (column: string, value: unknown) => {
+        state.reuseFilters.push({ column, value });
+        return reuseChain;
+      },
       not: () => reuseChain,
       gt: () => reuseChain,
       order: () => reuseChain,
@@ -75,7 +85,9 @@ describe("POST /api/checkout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.user = { id: "user-1", email: "user@example.com" };
+    state.providerId = "mock";
     state.reusableOrder = null;
+    state.reuseFilters = [];
     state.activePendingCount = 0;
     state.insertError = null;
     state.insertCalls = [];
@@ -244,5 +256,85 @@ describe("POST /api/checkout", () => {
 
     expect(response.status).toBe(400);
     expect(state.insertCalls).toHaveLength(0);
+  });
+
+  it('rejects channel="stripe" with 400 when a non-Stripe provider is active', async () => {
+    state.providerId = "lantu";
+
+    const response = await postCheckout({ planId: "std-month", channel: "stripe" });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("invalid_request");
+    expect(state.insertCalls).toHaveLength(0);
+    expect(providerMocks.createPayment).not.toHaveBeenCalled();
+  });
+
+  it("normalizes channel to stripe, applies 31m minimum TTL, saves provider_trade_no, and returns redirectUrl for Stripe", async () => {
+    state.providerId = "stripe";
+    providerMocks.createPayment.mockResolvedValueOnce({
+      payUrl: "https://checkout.stripe.com/c/pay/cs_test_abc",
+      redirectUrl: "https://checkout.stripe.com/c/pay/cs_test_abc",
+      providerTradeNo: "cs_test_abc",
+      raw: {},
+    });
+
+    const beforeMs = Date.now();
+    const response = await postCheckout({ planId: "std-month", channel: "wechat" });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      orderId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      reused: false,
+      redirectUrl: "https://checkout.stripe.com/c/pay/cs_test_abc",
+    });
+
+    expect(state.reuseFilters).toEqual(
+      expect.arrayContaining([
+        { column: "provider", value: "stripe" },
+        { column: "channel", value: "stripe" },
+      ]),
+    );
+
+    const inserted = state.insertCalls[0] as Record<string, unknown>;
+    expect(inserted.provider).toBe("stripe");
+    expect(inserted.channel).toBe("stripe");
+    expect(new Date(String(inserted.expires_at)).getTime() - beforeMs).toBeGreaterThanOrEqual(31 * 60 * 1000 - 1000);
+
+    expect(providerMocks.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "stripe",
+        ttlMinutes: 31,
+        notifyUrl: "http://localhost:3000/api/webhooks/stripe",
+      }),
+    );
+
+    const payUrlUpdate = state.updateCalls.find((call) => (call.values as Record<string, unknown>).pay_url);
+    expect(payUrlUpdate?.values).toEqual({
+      pay_url: "https://checkout.stripe.com/c/pay/cs_test_abc",
+      provider_trade_no: "cs_test_abc",
+    });
+  });
+
+  it("returns redirectUrl when reusing a fresh pending Stripe order", async () => {
+    state.providerId = "stripe";
+    state.reusableOrder = {
+      id: "reused-stripe-order",
+      provider: "stripe",
+      pay_url: "https://checkout.stripe.com/c/pay/cs_test_reused",
+    };
+
+    const response = await postCheckout({ planId: "std-month" });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      orderId: "reused-stripe-order",
+      reused: true,
+      redirectUrl: "https://checkout.stripe.com/c/pay/cs_test_reused",
+    });
+    expect(state.insertCalls).toHaveLength(0);
+    expect(providerMocks.createPayment).not.toHaveBeenCalled();
   });
 });

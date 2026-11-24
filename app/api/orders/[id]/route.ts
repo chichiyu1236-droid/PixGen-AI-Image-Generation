@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getBillingProvider } from "@/lib/billing/provider";
+import { getBillingProviderById } from "@/lib/billing/provider";
+import { isValidStripeSessionId } from "@/lib/billing/providers/stripe";
+import type { BillingProvider } from "@/lib/billing/providers/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
@@ -9,8 +11,10 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 const RECONCILE_AFTER_MS = 30 * 1000;
 // Lantu's query endpoint is rate limited to one call per 5 seconds; stay above it.
 const RECONCILE_THROTTLE_MS = 10 * 1000;
+// Lightweight throttle for immediate Stripe redirect-back verification.
+const STRIPE_RETURN_THROTTLE_MS = 3 * 1000;
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
 
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
@@ -49,38 +53,65 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     current = expired ?? { ...current, status: "expired" };
   }
 
-  // Read-time reconciliation: if the webhook may have been lost, ask the
-  // provider directly. Throttled so the 3s poller stays within provider limits.
-  const createdAgo = Date.now() - new Date(current.created_at).getTime();
-  const lastCheckedAgo = current.last_checked_at ? Date.now() - new Date(current.last_checked_at).getTime() : Infinity;
+  // Validate optional `?stripe_session_id=` against strict format and stored
+  // `provider_trade_no` binding before allowing immediate redirect-back lookup.
+  const url = new URL(request.url);
+  const rawStripeSessionId = url.searchParams.get("stripe_session_id");
+  const validStripeSessionId = isValidStripeSessionId(rawStripeSessionId) ? rawStripeSessionId : null;
+  const matchesStoredTradeNo =
+    !current.provider_trade_no || current.provider_trade_no === validStripeSessionId;
+  const trustedStripeSessionId =
+    current.provider === "stripe" && validStripeSessionId && matchesStoredTradeNo ? validStripeSessionId : null;
 
-  if (current.status === "pending" && createdAgo > RECONCILE_AFTER_MS && lastCheckedAgo > RECONCILE_THROTTLE_MS) {
-    const provider = getBillingProvider();
+  const nowMs = Date.now();
+  const createdAgo = nowMs - new Date(current.created_at).getTime();
+  const lastCheckedAgo = current.last_checked_at ? nowMs - new Date(current.last_checked_at).getTime() : Infinity;
+
+  const shouldImmediateStripeReconcile =
+    trustedStripeSessionId !== null &&
+    (current.status === "pending" || current.status === "expired") &&
+    lastCheckedAgo >= STRIPE_RETURN_THROTTLE_MS;
+
+  const shouldScheduledPendingReconcile =
+    current.status === "pending" && createdAgo > RECONCILE_AFTER_MS && lastCheckedAgo > RECONCILE_THROTTLE_MS;
+
+  if (shouldImmediateStripeReconcile || shouldScheduledPendingReconcile) {
+    let provider: BillingProvider | undefined;
 
     try {
-      const result = await provider.queryOrder({
-        orderId: current.id,
-        amountFen: current.amount_fen,
-        channel: current.channel,
-      });
-
-      if (result.paid) {
-        const { error: fulfillError } = await admin.rpc("fulfill_order", {
-          p_order_id: current.id,
-          p_provider_trade_no: result.providerTradeNo ?? "",
-        });
-
-        if (fulfillError) {
-          console.error(`[billing] reconcile fulfill failed order=${current.id}: ${fulfillError.message}`);
-        }
-      }
+      provider = getBillingProviderById(current.provider);
     } catch (error) {
-      console.error(`[billing] reconcile query failed order=${current.id}`, error);
+      console.error(`[billing] reconcile provider blocked order=${current.id} provider=${current.provider}`, error);
     }
 
-    const { data: refreshed } = await admin.from("orders").select("*").eq("id", current.id).single();
-    await admin.from("orders").update({ last_checked_at: new Date().toISOString() }).eq("id", current.id);
-    current = refreshed ?? current;
+    if (provider) {
+      try {
+        const result = await provider.queryOrder({
+          orderId: current.id,
+          amountFen: current.amount_fen,
+          channel: current.channel,
+          providerTradeNo: current.provider_trade_no,
+          stripeSessionId: trustedStripeSessionId,
+        });
+
+        if (result.paid) {
+          const { error: fulfillError } = await admin.rpc("fulfill_order", {
+            p_order_id: current.id,
+            p_provider_trade_no: result.providerTradeNo ?? "",
+          });
+
+          if (fulfillError) {
+            console.error(`[billing] reconcile fulfill failed order=${current.id}: ${fulfillError.message}`);
+          }
+        }
+      } catch (error) {
+        console.error(`[billing] reconcile query failed order=${current.id}`, error);
+      }
+
+      const { data: refreshed } = await admin.from("orders").select("*").eq("id", current.id).single();
+      await admin.from("orders").update({ last_checked_at: new Date().toISOString() }).eq("id", current.id);
+      current = refreshed ?? current;
+    }
   }
 
   return NextResponse.json({
@@ -90,6 +121,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       credits: current.credits,
       amountFen: current.amount_fen,
       channel: current.channel,
+      provider: current.provider,
       payUrl: current.pay_url,
       expiresAt: current.expires_at,
       createdAt: current.created_at,

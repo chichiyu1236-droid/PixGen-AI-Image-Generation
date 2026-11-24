@@ -30,6 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
 const CHANNEL_LABEL: Record<string, string> = {
   wechat: "微信",
   alipay: "支付宝",
+  stripe: "Stripe",
 };
 
 const PAGE_SIZE = 20;
@@ -73,7 +74,11 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
     query = query.eq("status", statusFilter as "pending" | "paid" | "expired" | "failed" | "flagged");
   }
 
-  const { data: orders } = await query;
+  const { data: orders, error: queryError } = await query;
+
+  if (queryError) {
+    console.error("[admin/orders] query failed:", queryError);
+  }
 
   return (
     <main className="min-h-screen bg-paper px-6 py-6">
@@ -111,6 +116,18 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
         </nav>
 
         <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-sm">
+          {queryError ? (
+            <div
+              role="alert"
+              className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            >
+              <p className="font-semibold">订单列表查询失败</p>
+              <p className="mt-1 text-xs text-red-700">
+                请确认数据库已应用迁移 <code>0007_orders_profiles_fk.sql</code> 并刷新 schema 缓存。错误详情：
+                {queryError.message}
+              </p>
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead className="text-ink/50">
@@ -156,7 +173,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                     </td>
                   </tr>
                 ))}
-                {(orders ?? []).length === 0 ? (
+                {!queryError && (orders ?? []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-ink/40">
                       暂无订单

@@ -2,7 +2,7 @@ import "server-only";
 
 import { getAgentEnv } from "@/lib/agent/env";
 import { agentToolDefinitions, runAgentTool, type ToolContext } from "@/lib/agent/tools";
-import type { AgentBrain, BrainContext, BrainTurnMessage, CanvasItem, TraceItem } from "@/lib/agent/types";
+import type { AgentBrain, BrainContext, BrainTurnMessage, CanvasItem, ToolCallSpec, TraceItem } from "@/lib/agent/types";
 
 export type AgentTurnInput = {
   brain: AgentBrain;
@@ -34,6 +34,8 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
   const trace: TraceItem[] = [];
   const toolCalls: AgentTurnResult["toolCalls"] = [];
 
+  let callSeq = 0;
+
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     const response = await brain.respond({ messages, tools: agentToolDefinitions, context });
 
@@ -41,42 +43,73 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
       return { replyText: response.text, trace, toolCalls };
     }
 
-    const argsSummary = summarizeArgs(response.args);
-    const label = TOOL_LABELS[response.toolName] ?? response.toolName;
-    let step: TraceItem = { type: "step", name: label, status: "running" };
-    trace.push(step);
+    const batch: ToolCallSpec[] =
+      response.kind === "tool_calls"
+        ? response.calls
+        : [
+            {
+              id: response.id ?? `call_${response.toolName}_${iteration}_${(callSeq += 1)}`,
+              toolName: response.toolName,
+              args: response.args,
+            },
+          ];
 
-    const result = await runAgentTool(response.toolName, response.args, ctx);
-    const costCredits = result.ok ? Number(result.data.costCredits ?? 0) : 0;
-
-    step = { type: "step", name: label, status: result.ok ? "done" : "failed" };
-    trace[trace.length - 1] = step;
-
-    trace.push({
-      type: "tool",
-      name: response.toolName,
-      argsSummary,
-      costCredits,
-      status: result.ok ? "done" : "failed",
-      detail: result.ok ? undefined : result.error,
-    });
-    toolCalls.push({ name: response.toolName, argsSummary, ok: result.ok });
-
-    if (result.ok) {
-      const image = result.data as Partial<CanvasItem> & { imageUrl?: string };
-
-      if (image.generationId && image.imageUrl) {
-        trace.push({
-          type: "image",
-          generationId: image.generationId,
-          imageUrl: image.imageUrl,
-          version: "",
-          origin: image.origin ?? "agent",
-        });
-      }
+    if (batch.length === 0) {
+      return {
+        replyText: (response.kind === "tool_calls" ? response.content : undefined) || "（无回复，请重试）",
+        trace,
+        toolCalls,
+      };
     }
 
-    messages.push({ role: "tool", toolName: response.toolName, result });
+    messages.push({
+      role: "assistant",
+      content: response.kind === "tool_calls" ? (response.content ?? "") : "",
+      toolCalls: batch,
+    });
+
+    for (const call of batch) {
+      const argsSummary = summarizeArgs(call.args);
+      const label = TOOL_LABELS[call.toolName] ?? call.toolName;
+      const stepIndex = trace.length;
+      trace.push({ type: "step", name: label, status: "running" });
+
+      const result = await runAgentTool(call.toolName, call.args, ctx);
+      const costCredits = result.ok ? Number(result.data.costCredits ?? 0) : 0;
+
+      trace[stepIndex] = { type: "step", name: label, status: result.ok ? "done" : "failed" };
+
+      trace.push({
+        type: "tool",
+        name: call.toolName,
+        argsSummary,
+        costCredits,
+        status: result.ok ? "done" : "failed",
+        detail: result.ok ? undefined : result.error,
+      });
+      toolCalls.push({ name: call.toolName, argsSummary, ok: result.ok });
+
+      if (result.ok) {
+        const image = result.data as Partial<CanvasItem> & { imageUrl?: string };
+
+        if (image.generationId && image.imageUrl) {
+          trace.push({
+            type: "image",
+            generationId: image.generationId,
+            imageUrl: image.imageUrl,
+            version: "",
+            origin: image.origin ?? "agent",
+          });
+        }
+      }
+
+      messages.push({
+        role: "tool",
+        toolCallId: call.id,
+        toolName: call.toolName,
+        result,
+      });
+    }
   }
 
   // Iteration budget exhausted: guarantee an honest final assistant message.
