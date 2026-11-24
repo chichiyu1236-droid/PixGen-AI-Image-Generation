@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getBillingEnv } from "@/lib/billing/env";
-import { verifyStripeWebhookSignature } from "@/lib/billing/providers/stripe";
+import { isValidStripeSessionId, verifyStripeWebhookSignature } from "@/lib/billing/providers/stripe";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/database";
 
@@ -9,6 +9,7 @@ const FULFILLABLE_EVENT_TYPES = new Set([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
 ]);
+const ACTIONABLE_ORDER_STATUSES = new Set(["pending", "expired"]);
 
 interface StripeCheckoutSessionObject {
   id?: string;
@@ -63,24 +64,84 @@ export async function POST(request: Request) {
 
   const session = event.data?.object;
 
-  if (!session || session.payment_status !== "paid") {
+  if (!session || typeof session !== "object" || Array.isArray(session) || session.payment_status !== "paid") {
     return NextResponse.json({ received: true }, { status: 200 });
   }
 
+  if (!isValidStripeSessionId(session.id)) {
+    console.warn(`[billing] stripe webhook missing/invalid session.id event=${event.id ?? "n/a"}`);
+    return NextResponse.json(
+      { received: true, ignored: true, reason: "invalid_session_id" },
+      { status: 200 },
+    );
+  }
+
+  const sessionId = session.id;
   const metadataOrderId =
-    session.metadata && typeof session.metadata.order_id === "string" ? session.metadata.order_id.trim() : "";
+    session.metadata &&
+    typeof session.metadata === "object" &&
+    !Array.isArray(session.metadata) &&
+    typeof session.metadata.order_id === "string"
+      ? session.metadata.order_id.trim()
+      : "";
   const clientRefOrderId = typeof session.client_reference_id === "string" ? session.client_reference_id.trim() : "";
-  const orderId = metadataOrderId || clientRefOrderId;
-
-  if (!UUID_REGEX.test(orderId)) {
-    console.warn(`[billing] stripe webhook missing/invalid order_id event=${event.id ?? "n/a"}`);
-    return NextResponse.json({ received: true }, { status: 200 });
-  }
 
   const admin = createSupabaseAdminClient();
+  const rawNotify = parsedEvent as Json;
+  const flagOrder = async (targetOrderId: string) => {
+    const { error } = await admin
+      .from("orders")
+      .update({ status: "flagged", raw_notify: rawNotify, notified_at: new Date().toISOString() })
+      .eq("id", targetOrderId)
+      .neq("status", "paid");
+
+    if (error) {
+      console.error(`[billing] stripe webhook flag update failed order=${targetOrderId}: ${error.message}`);
+    }
+  };
+
+  const hasValidOrderBinding =
+    UUID_REGEX.test(metadataOrderId) &&
+    UUID_REGEX.test(clientRefOrderId) &&
+    metadataOrderId === clientRefOrderId;
+
+  if (!hasValidOrderBinding) {
+    const { data: boundOrder, error: boundLookupError } = await admin
+      .from("orders")
+      .select("id,status,provider,provider_trade_no")
+      .eq("provider", "stripe")
+      .eq("provider_trade_no", sessionId)
+      .maybeSingle();
+
+    if (boundLookupError) {
+      console.error(
+        `[billing] stripe webhook bound order lookup failed session=${sessionId}: ${boundLookupError.message}`,
+      );
+      return NextResponse.json({ error: "order_lookup_failed" }, { status: 500 });
+    }
+
+    if (boundOrder && ACTIONABLE_ORDER_STATUSES.has(boundOrder.status)) {
+      console.error(
+        `[billing] stripe webhook order binding mismatch order=${boundOrder.id} session=${sessionId} metadata_order_id=${metadataOrderId || "missing"} client_reference_id=${clientRefOrderId || "missing"} - FLAGGED`,
+      );
+      await flagOrder(boundOrder.id);
+      return NextResponse.json({ received: true, flagged: true }, { status: 200 });
+    }
+
+    console.warn(
+      `[billing] stripe webhook ignored order binding mismatch event=${event.id ?? "n/a"} session=${sessionId} metadata_order_id=${metadataOrderId || "missing"} client_reference_id=${clientRefOrderId || "missing"}`,
+    );
+    return NextResponse.json(
+      { received: true, ignored: true, reason: "order_binding_mismatch" },
+      { status: 200 },
+    );
+  }
+
+  const orderId = metadataOrderId;
+
   const { data: order, error: lookupError } = await admin
     .from("orders")
-    .select("id,user_id,credits,amount_fen,status,channel,provider")
+    .select("id,user_id,credits,amount_fen,status,channel,provider,provider_trade_no")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -96,7 +157,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true }, { status: 200 });
   }
 
-  const rawNotify = parsedEvent as Json;
   const recordNotification = async () => {
     await admin
       .from("orders")
@@ -104,9 +164,26 @@ export async function POST(request: Request) {
       .eq("id", order.id);
   };
 
+  const storedTradeNo = order.provider_trade_no?.trim() || "";
+
   if (order.status === "paid") {
+    if (storedTradeNo && storedTradeNo !== sessionId) {
+      console.warn(
+        `[billing] stripe webhook ignored mismatched session for already-paid order=${order.id} expected=${storedTradeNo} got=${sessionId}`,
+      );
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
     await recordNotification();
     return NextResponse.json({ received: true }, { status: 200 });
+  }
+
+  if (storedTradeNo && storedTradeNo !== sessionId) {
+    console.error(
+      `[billing] stripe webhook session mismatch order=${order.id} expected=${storedTradeNo} got=${sessionId} - FLAGGED`,
+    );
+    await flagOrder(order.id);
+    return NextResponse.json({ received: true, flagged: true }, { status: 200 });
   }
 
   const amountMatches = typeof session.amount_total === "number" && session.amount_total === order.amount_fen;
@@ -116,18 +193,13 @@ export async function POST(request: Request) {
     console.error(
       `[billing] stripe webhook mismatch order=${order.id} expected=${order.amount_fen}fen/cny got=${String(session.amount_total)}/${String(session.currency)} - FLAGGED`,
     );
-    await admin
-      .from("orders")
-      .update({ status: "flagged", raw_notify: rawNotify, notified_at: new Date().toISOString() })
-      .eq("id", order.id)
-      .neq("status", "paid");
+    await flagOrder(order.id);
     return NextResponse.json({ received: true, flagged: true }, { status: 200 });
   }
 
-  const providerTradeNo = typeof session.id === "string" ? session.id : "";
   const { error: fulfillError } = await admin.rpc("fulfill_order", {
     p_order_id: order.id,
-    p_provider_trade_no: providerTradeNo,
+    p_provider_trade_no: sessionId,
   });
 
   if (fulfillError) {
@@ -142,7 +214,7 @@ export async function POST(request: Request) {
   }
 
   await recordNotification();
-  console.log(`[billing] stripe order fulfilled order=${order.id} credits=${order.credits} session=${providerTradeNo}`);
+  console.log(`[billing] stripe order fulfilled order=${order.id} credits=${order.credits} session=${sessionId}`);
 
   return NextResponse.json({ received: true }, { status: 200 });
 }
