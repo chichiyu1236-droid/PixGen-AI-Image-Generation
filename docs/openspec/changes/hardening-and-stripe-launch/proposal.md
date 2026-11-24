@@ -17,7 +17,7 @@ PixGen 当前的产品主链路已跑通（经典生图、参考图、会员双�
    - **改动后**：工作台侧边栏新增「账单与明细」（`/billing`），展示双池余额与会员到期状态、历史订单（待支付订单可继续付款）及每笔积分增减流水；`/pay/[orderId]` 对年卡明确展示「共 12 期、每 30 天发放 X 积分、首期立即到账」，异常订单展示客服联系邮箱（读取 `NEXT_PUBLIC_SUPPORT_EMAIL`）与订单号；新增静态公开页 `/terms`（服务条款与退款规则）与 `/privacy`（隐私政策），在首页页脚、登录页、收银页挂载入口。
 4. **4 类后端与管理端 P0 缺陷止血**
    - **生产环境 Mock 支付守卫修复**：修复 `lib/billing/env.ts` 用 `z.coerce.boolean()` 导致环境变量写 `"false"` 反而被当成 `true` 的漏洞，与图像和 Agent 环境变量守卫保持一致。
-   - **生图与 Agent 超时及参考图格式修复**：为 `/api/generate` 与 `/api/agent/sessions/[id]/messages` 显式声明 Serverless 函数 `maxDuration`，防止生图或对话中途被平台超时强杀；修复参考图前端压缩产出 JPEG 但后端按 PNG MIME 上传给生图接口导致严格上游拒收的问题。
+   - **生图与 Agent 超时及参考图格式修复**：为 `/api/generate`（`180s`，覆盖 90s 生图 + 60s 托管图下载 + 上传入库）与 `/api/agent/sessions/[id]/messages`（`300s`）显式声明 Serverless 函数 `maxDuration`，防止生图或对话中途被平台超时强杀；修复参考图前端压缩产出 JPEG 但后端按 PNG MIME 上传给生图接口导致严格上游拒收的问题（完整保留既有 `node:https` + `safeLookup` 的 SSRF/DNS Rebinding 下载防护）。
    - **管理后台订单页联表修复**：新增 `0007_orders_profiles_fk.sql` 补齐 `orders.user_id -> public.profiles(id)` 外键，修复 `/admin/orders` PostgREST 联表查用户邮箱失败且页面吞掉错误误显示「暂无订单」的问题（视频工作台规格中的迁移号顺延为 `0008`）。
    - **Agent 真实模型协议与扣费一致性修复**：补齐 `RealBrain` 回传工具结果前缺失的 `assistant.tool_calls` 标准消息并按序执行多工具调用；单轮内每成功出图立即扣减内存 `ctx.totalCredits` 防止超额调起上游生图；数据库扣费失败时删除已上传的 Storage 孤儿图片；`edit_image` 继承原图真实画幅比例而非固定改成 `1:1`。
 
