@@ -15,6 +15,56 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ResilientImage } from "@/components/resilient-image";
+
+const AGENT_ERROR_MESSAGES: Record<string, string> = {
+  agent_turn_failed: "AI 对话服务暂时繁忙，请稍后重试（未出图不会扣积分）。",
+  agent_provider_unavailable: "AI 对话服务暂未就绪，请稍后重试。",
+  message_store_failed: "对话记录保存失败，请稍后重试。",
+  session_not_found: "当前对话不存在或已失效，请新建对话重试。",
+  not_authenticated: "登录状态已失效，请重新登录。",
+  invalid_request: "消息内容不符合要求，请调整后重试。",
+  insufficient_credits: "积分余额不足，请购买会员卡后再试。",
+  network_error: "网络连接异常，请检查网络后重试。",
+  session_create_failed: "新会话创建失败，请稍后重试。",
+  sessions_unavailable: "历史对话加载失败，请稍后重试。",
+  messages_unavailable: "对话记录加载失败，请稍后重试。",
+  profile_unavailable: "账户信息读取失败，请刷新页面后重试。",
+  agent_membership_required: "Agent 对话为会员专属功能，请先开通会员。",
+  provider_unavailable: "生图服务暂时繁忙，请稍后重试。",
+  image_generation_failed: "图片生成失败，请稍后重试。",
+  storage_unavailable: "图片保存失败，请稍后重试。",
+  message_failed: "发送失败，请稍后重试。",
+};
+
+const DEFAULT_AGENT_ERROR_MESSAGE = "发送失败，请稍后重试。";
+
+export function mapAgentErrorMessage(code?: string | null): string {
+  const normalized = typeof code === "string" ? code.trim() : "";
+  if (!normalized) {
+    return DEFAULT_AGENT_ERROR_MESSAGE;
+  }
+  return AGENT_ERROR_MESSAGES[normalized] ?? DEFAULT_AGENT_ERROR_MESSAGE;
+}
+
+class AgentRequestError extends Error {
+  readonly code: string;
+  readonly userMessageRemoved: boolean;
+
+  constructor(code: string, userMessageRemoved: boolean) {
+    super(code);
+    this.code = code;
+    this.userMessageRemoved = userMessageRemoved;
+  }
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
 type TraceItem = {
   type: "step" | "tool" | "image";
@@ -210,14 +260,15 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
 
       if (!currentSession) {
         const created = await fetch("/api/agent/sessions", { method: "POST" });
-        const createdBody = (await created.json()) as { session?: SessionSummary; error?: string };
+        const createdBody = await readJsonResponse<{ session?: SessionSummary; error?: string }>(created);
 
-        if (!created.ok || !createdBody.session) {
-          if (createdBody.error === "agent_membership_required") {
+        if (!created.ok || !createdBody?.session) {
+          if (createdBody?.error === "agent_membership_required") {
+            setMessages((prev) => prev.filter((message) => message.id !== localId));
             setMembershipRequired(true);
             return;
           }
-          throw new Error(createdBody.error ?? "session_create_failed");
+          throw new AgentRequestError(createdBody?.error ?? "session_create_failed", true);
         }
 
         currentSession = createdBody.session.id;
@@ -232,20 +283,22 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: trimmed, selectedGenerationId }),
       });
-      const body = (await response.json()) as {
+      const body = await readJsonResponse<{
         userMessage?: ChatMessage;
         assistantMessage?: ChatMessage;
         canvas?: CanvasItem[];
         remainingCredits?: number | null;
         error?: string;
-      };
+        userMessageRemoved?: boolean;
+      }>(response);
 
-      if (!response.ok || !body.assistantMessage) {
-        if (body.error === "agent_membership_required") {
+      if (!response.ok || !body?.assistantMessage) {
+        if (body?.error === "agent_membership_required") {
+          setMessages((prev) => prev.filter((message) => message.id !== localId));
           setMembershipRequired(true);
           return;
         }
-        throw new Error(body.error ?? "message_failed");
+        throw new AgentRequestError(body?.error ?? "message_failed", body?.userMessageRemoved !== false);
       }
 
       setMessages((prev) => [
@@ -277,7 +330,15 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
 
       scrollToEnd();
     } catch (caught) {
-      setError(caught instanceof Error && caught.message !== "message_failed" ? caught.message : "发送失败，请稍后重试。");
+      const code = caught instanceof AgentRequestError ? caught.code : "network_error";
+      const shouldRemoveOptimistic = caught instanceof AgentRequestError ? caught.userMessageRemoved : true;
+
+      if (shouldRemoveOptimistic) {
+        setMessages((prev) => prev.filter((message) => message.id !== localId));
+        setInput((currentInput) => (currentInput === "" ? trimmed : currentInput));
+      }
+
+      setError(mapAgentErrorMessage(code));
     } finally {
       setBusy(false);
     }
@@ -288,14 +349,14 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
 
     try {
       const response = await fetch("/api/agent/sessions", { method: "POST" });
-      const body = (await response.json()) as { session?: SessionSummary; error?: string };
+      const body = await readJsonResponse<{ session?: SessionSummary; error?: string }>(response);
 
-      if (!response.ok || !body.session) {
-        if (body.error === "agent_membership_required") {
+      if (!response.ok || !body?.session) {
+        if (body?.error === "agent_membership_required") {
           setMembershipRequired(true);
           return;
         }
-        setError("新会话创建失败，请稍后重试。");
+        setError(mapAgentErrorMessage(body?.error ?? "session_create_failed"));
         return;
       }
 
@@ -308,7 +369,7 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
       setSpent(0);
       setHistoryOpen(false);
     } catch {
-      setError("网络异常，请稍后重试。");
+      setError(mapAgentErrorMessage("network_error"));
     }
   }
 
@@ -601,11 +662,11 @@ export function AgentWorkbench({ credits, membershipActive }: { credits: number;
             >
               <X size={18} aria-hidden />
             </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ResilientImage
               src={lightboxItem.imageUrl}
               alt={`大图预览 ${lightboxItem.version}`}
-              className="mt-8 max-h-[78vh] w-auto max-w-full rounded-2xl border border-white/15 bg-[#fbf9f3] object-contain shadow-2xl"
+              containerClassName="mt-8"
+              className="max-h-[78vh] w-auto max-w-full rounded-2xl border border-white/15 bg-[#fbf9f3] object-contain shadow-2xl"
             />
             <div className="flex items-center gap-3 rounded-full bg-[#fbf9f3]/92 px-5 py-2 text-xs text-[#171916] shadow-lg">
               <span className="font-mono font-medium">{lightboxItem.version}</span>
@@ -694,19 +755,24 @@ function TraceRow({ item, onSelect }: { item: TraceItem; onSelect: (id: string) 
   if (!item.imageUrl) return null;
 
   return (
-    <button
-      type="button"
-      onClick={() => item.generationId && onSelect(item.generationId)}
-      className="relative block w-36 overflow-hidden rounded-xl border border-[#171916]/12 transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(23,25,22,0.12)]"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={item.imageUrl} alt={`生成结果 ${item.version ?? ""}`.trim()} className="block h-auto w-full" />
-      {item.version ? (
-        <span className="absolute left-1.5 top-1.5 rounded-full bg-[#171916]/72 px-2 py-0.5 font-mono text-[9.5px] text-[#faf7ef]">
-          {item.version}
-        </span>
-      ) : null}
-    </button>
+    <div className="w-36 overflow-hidden rounded-xl border border-[#171916]/12">
+      <ResilientImage
+        src={item.imageUrl}
+        alt={`生成结果 ${item.version ?? ""}`.trim()}
+        onImageClick={() => item.generationId && onSelect(item.generationId)}
+        imageClickLabel={`选中生成结果 ${item.version ?? ""}`.trim()}
+        imageButtonClassName="relative block w-full transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(23,25,22,0.12)]"
+        className="block h-auto w-full"
+        showOriginalLink={false}
+        overlay={
+          item.version ? (
+            <span className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-[#171916]/72 px-2 py-0.5 font-mono text-[9.5px] text-[#faf7ef]">
+              {item.version}
+            </span>
+          ) : null
+        }
+      />
+    </div>
   );
 }
 
@@ -764,25 +830,26 @@ function CanvasCarousel({
         ref={stageRef}
         className="relative grid min-h-[320px] flex-1 place-items-center overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f1ede2]/90 p-4"
       >
-        <span
+        <div
           className="relative inline-flex"
           style={imgBox ? { width: imgBox.width, height: imgBox.height } : undefined}
         >
-          <button type="button" onClick={onSelect} className="h-full w-full" aria-label={`选中 ${current.version}`}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={current.imageUrl}
-              alt={`画布作品 ${current.version}`}
-              onLoad={(event) => {
-                naturalRef.current = {
-                  width: event.currentTarget.naturalWidth,
-                  height: event.currentTarget.naturalHeight,
-                };
-                refit();
-              }}
-              className="h-full w-full rounded-xl border border-[#171916]/10 object-contain shadow-[0_18px_46px_rgba(23,25,22,0.12)]"
-            />
-          </button>
+          <ResilientImage
+            src={current.imageUrl}
+            alt={`画布作品 ${current.version}`}
+            onLoad={(event) => {
+              naturalRef.current = {
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              };
+              refit();
+            }}
+            onImageClick={onSelect}
+            imageClickLabel={`选中 ${current.version}`}
+            imageButtonClassName="h-full w-full"
+            containerClassName="h-full w-full"
+            className="h-full w-full rounded-xl border border-[#171916]/10 object-contain shadow-[0_18px_46px_rgba(23,25,22,0.12)]"
+          />
 
           {/* Version + Editing badge */}
           <span className="pointer-events-none absolute left-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-[#171916]/72 px-2.5 py-1 font-mono text-[10.5px] text-[#faf7ef] backdrop-blur">
@@ -796,7 +863,7 @@ function CanvasCarousel({
                 type="button"
                 onClick={() => onView(Math.max(0, viewIndex - 1))}
                 disabled={viewIndex <= 0}
-                className="absolute left-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#fbf9f3]/78 text-lg leading-none text-[#171916] shadow backdrop-blur-sm transition hover:bg-[#fbf9f3] disabled:pointer-events-none disabled:opacity-35"
+                className="absolute left-2 top-1/2 z-10 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#fbf9f3]/78 text-lg leading-none text-[#171916] shadow backdrop-blur-sm transition hover:bg-[#fbf9f3] disabled:pointer-events-none disabled:opacity-35"
                 aria-label="上一张"
               >
                 ‹
@@ -805,7 +872,7 @@ function CanvasCarousel({
                 type="button"
                 onClick={() => onView(Math.min(canvas.length - 1, viewIndex + 1))}
                 disabled={viewIndex >= canvas.length - 1}
-                className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#fbf9f3]/78 text-lg leading-none text-[#171916] shadow backdrop-blur-sm transition hover:bg-[#fbf9f3] disabled:pointer-events-none disabled:opacity-35"
+                className="absolute right-2 top-1/2 z-10 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#fbf9f3]/78 text-lg leading-none text-[#171916] shadow backdrop-blur-sm transition hover:bg-[#fbf9f3] disabled:pointer-events-none disabled:opacity-35"
                 aria-label="下一张"
               >
                 ›
@@ -823,7 +890,7 @@ function CanvasCarousel({
               </span>
             </>
           ) : null}
-        </span>
+        </div>
       </div>
 
       {/* Lineage & Actions Bar */}
@@ -892,11 +959,12 @@ function CanvasCarousel({
                   : "border-[#171916]/10 bg-[#f4f0e5]/65 opacity-80 hover:opacity-100",
               ].join(" ")}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <ResilientImage
                 src={item.imageUrl}
                 alt={`缩略图 ${item.version}`}
-                className="h-10 w-10 rounded-lg object-cover"
+                compact
+                containerClassName="h-10 w-10 shrink-0 rounded-lg"
+                className="h-full w-full object-cover"
               />
               <div className="leading-tight">
                 <p className="font-mono text-[10px] font-semibold text-[#171916]">{item.version}</p>

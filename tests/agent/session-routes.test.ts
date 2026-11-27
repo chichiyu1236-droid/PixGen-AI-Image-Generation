@@ -58,7 +58,11 @@ function serverClient(options: { user?: { id: string } | null; session?: object 
   };
 }
 
-function adminClient(options: { membershipActive?: boolean } = {}) {
+function adminClient(options: {
+  membershipActive?: boolean;
+  onDeleteMessage?: (id: string) => void;
+  onInsertMessage?: (row: { id?: string; role: string; content?: string; trace?: unknown[] }) => void;
+} = {}) {
   return {
     rpc: vi.fn(async () => ({
       data: [
@@ -77,20 +81,29 @@ function adminClient(options: { membershipActive?: boolean } = {}) {
     from: vi.fn((table: string) => {
       if (table === "agent_messages") {
         return {
-          insert: (row: { role: string; content?: string; trace?: unknown[] }) => ({
-            error: null,
-            select: () => ({
-              single: async () => ({
-                data: {
-                  id: `msg-${row.role}`,
-                  role: row.role,
-                  content: row.content ?? "",
-                  trace: row.trace ?? [],
-                  created_at: new Date().toISOString(),
-                },
-                error: null,
+          insert: (row: { id?: string; role: string; content?: string; trace?: unknown[] }) => {
+            options.onInsertMessage?.(row);
+            return {
+              error: null,
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    id: row.id ?? `msg-${row.role}`,
+                    role: row.role,
+                    content: row.content ?? "",
+                    trace: row.trace ?? [],
+                    created_at: new Date().toISOString(),
+                  },
+                  error: null,
+                }),
               }),
-            }),
+            };
+          },
+          delete: () => ({
+            eq: async (_column: string, id: string) => {
+              options.onDeleteMessage?.(id);
+              return { error: null };
+            },
           }),
           select: () => ({
             eq: () => ({
@@ -325,5 +338,95 @@ describe("POST /api/agent/sessions/[id]/messages", () => {
     expect(writeResponse.status).toBe(403);
     expect(body.error).toBe("agent_membership_required");
     expect(runAgentTool).not.toHaveBeenCalled();
+  });
+
+  it("removes the inserted user message when createBrain throws", async () => {
+    const insertedIds: string[] = [];
+    const deletedIds: string[] = [];
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        onInsertMessage: (row) => {
+          if (row.role === "user" && row.id) insertedIds.push(row.id);
+        },
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(createBrain).mockImplementation(() => {
+      throw new Error("missing_api_key");
+    });
+
+    const response = await postMessage(request({ text: "你好" }), {
+      params: Promise.resolve({ id: SESSION_ID }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toMatchObject({ error: "agent_provider_unavailable", userMessageRemoved: true });
+    expect(insertedIds).toHaveLength(1);
+    expect(deletedIds).toEqual(insertedIds);
+  });
+
+  it("removes the inserted user message when runAgentTurn throws before generating any image", async () => {
+    const insertedIds: string[] = [];
+    const deletedIds: string[] = [];
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        onInsertMessage: (row) => {
+          if (row.role === "user" && row.id) insertedIds.push(row.id);
+        },
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(listCanvasItems).mockResolvedValue([]);
+    vi.mocked(createBrain).mockReturnValue({
+      respond: vi.fn().mockRejectedValue(new Error("upstream_503")),
+    });
+
+    const response = await postMessage(request({ text: "你好" }), {
+      params: Promise.resolve({ id: SESSION_ID }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: true });
+    expect(insertedIds).toHaveLength(1);
+    expect(deletedIds).toEqual(insertedIds);
+  });
+
+  it("preserves the inserted user message when runAgentTurn throws after producing a new canvas image", async () => {
+    const deletedIds: string[] = [];
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(listCanvasItems)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          generationId: "66666666-6666-6666-6666-666666666666",
+          imageUrl: "https://example.test/generated.png",
+          origin: "agent",
+          version: "图 1 · v1",
+          basedOn: null,
+          promptSummary: "海报",
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    vi.mocked(createBrain).mockReturnValue({
+      respond: vi.fn().mockRejectedValue(new Error("followup_turn_503")),
+    });
+
+    const response = await postMessage(request({ text: "做一张海报" }), {
+      params: Promise.resolve({ id: SESSION_ID }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: false });
+    expect(deletedIds).toHaveLength(0);
   });
 });

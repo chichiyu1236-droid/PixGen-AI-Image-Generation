@@ -22,6 +22,42 @@ const HISTORY_WINDOW = 12;
 
 type MessagesRouteContext = { params: Promise<{ id: string }> };
 
+async function removeOrphanUserMessage(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  userMessageId: string,
+): Promise<boolean> {
+  try {
+    const result = await admin.from("agent_messages").delete().eq("id", userMessageId);
+    if (result?.error) {
+      console.error(result.error);
+      return false;
+    }
+    return true;
+  } catch (cleanupError) {
+    console.error(cleanupError);
+    return false;
+  }
+}
+
+async function cleanupUserMessageIfNoNewArtwork(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  sessionId: string,
+  userMessageId: string,
+  canvasCountBefore: number,
+): Promise<boolean> {
+  try {
+    const afterCanvas = await listCanvasItems(admin, sessionId);
+    if (afterCanvas.length > canvasCountBefore) {
+      return false;
+    }
+  } catch (canvasError) {
+    console.error(canvasError);
+    return false;
+  }
+
+  return removeOrphanUserMessage(admin, userMessageId);
+}
+
 export async function POST(request: Request, context: MessagesRouteContext) {
   const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
@@ -73,7 +109,7 @@ export async function POST(request: Request, context: MessagesRouteContext) {
 
   if (insertUserError) {
     console.error(insertUserError);
-    return NextResponse.json({ error: "message_store_failed" }, { status: 500 });
+    return NextResponse.json({ error: "message_store_failed", userMessageRemoved: true }, { status: 500 });
   }
 
   const { data: historyRows } = await admin
@@ -97,7 +133,8 @@ export async function POST(request: Request, context: MessagesRouteContext) {
     brain = createBrain();
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "agent_provider_unavailable" }, { status: 500 });
+    const userMessageRemoved = await removeOrphanUserMessage(admin, userMessageId);
+    return NextResponse.json({ error: "agent_provider_unavailable", userMessageRemoved }, { status: 500 });
   }
 
   const ctx: ToolContext = {
@@ -121,10 +158,9 @@ export async function POST(request: Request, context: MessagesRouteContext) {
       ctx,
     });
   } catch (error) {
-    // The user message is already stored; fail the turn without poisoning the
-    // transcript - the user can simply retry.
     console.error(error);
-    return NextResponse.json({ error: "agent_turn_failed" }, { status: 502 });
+    const userMessageRemoved = await cleanupUserMessageIfNoNewArtwork(admin, id, userMessageId, canvas.length);
+    return NextResponse.json({ error: "agent_turn_failed", userMessageRemoved }, { status: 502 });
   }
 
   const { data: assistantMessage, error: insertAssistantError } = await admin
@@ -140,7 +176,8 @@ export async function POST(request: Request, context: MessagesRouteContext) {
 
   if (insertAssistantError || !assistantMessage) {
     console.error(insertAssistantError);
-    return NextResponse.json({ error: "message_store_failed" }, { status: 500 });
+    const userMessageRemoved = await cleanupUserMessageIfNoNewArtwork(admin, id, userMessageId, canvas.length);
+    return NextResponse.json({ error: "message_store_failed", userMessageRemoved }, { status: 500 });
   }
 
   const isFirstExchange = history.length === 0;
