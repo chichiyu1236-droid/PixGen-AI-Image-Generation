@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { GenerationFeedback } from "@/components/generation-feedback";
+import { ResilientImage } from "@/components/resilient-image";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { compressImageToBase64, type ReferenceImageFile } from "@/lib/media/compress-image";
 import {
@@ -744,22 +745,19 @@ export function GenerationForm({
             <div className="flex min-h-0 flex-1 flex-col gap-3">
               {/* Framed Result Artwork */}
               <div className="relative grid min-h-[340px] flex-1 place-items-center overflow-hidden rounded-2xl border border-[#171916]/10 bg-[#f1ede2]/90 p-4">
-                <button
-                  type="button"
-                  onClick={() => setLightboxOpen(true)}
-                  className="group relative flex max-h-full max-w-full items-center justify-center focus:outline-none"
-                  aria-label="放大查看生成图片"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element -- dynamic Supabase/mock image adapts naturally to aspect ratio */}
-                  <img
-                    src={activeArtwork.imageUrl}
-                    alt="生成图片结果"
-                    className="max-h-[56vh] w-auto max-w-full rounded-xl border border-[#171916]/10 bg-[#fbf9f3] object-contain shadow-[0_20px_50px_rgba(23,25,22,0.12)] transition duration-300 group-hover:scale-[1.01] lg:max-h-[calc(100vh-20.5rem)]"
-                  />
-                  <span className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-[#171916]/72 px-2.5 py-1 text-[11px] text-[#faf7ef] opacity-0 backdrop-blur transition group-hover:opacity-100">
-                    <Maximize2 size={11} aria-hidden /> 灯箱查看
-                  </span>
-                </button>
+                <ResilientImage
+                  src={activeArtwork.imageUrl}
+                  alt="生成图片结果"
+                  onImageClick={() => setLightboxOpen(true)}
+                  imageClickLabel="放大查看生成图片"
+                  imageButtonClassName="group relative flex max-h-full max-w-full items-center justify-center focus:outline-none"
+                  className="max-h-[56vh] w-auto max-w-full rounded-xl border border-[#171916]/10 bg-[#fbf9f3] object-contain shadow-[0_20px_50px_rgba(23,25,22,0.12)] transition duration-300 group-hover:scale-[1.01] lg:max-h-[calc(100vh-20.5rem)]"
+                  overlay={
+                    <span className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-[#171916]/72 px-2.5 py-1 text-[11px] text-[#faf7ef] opacity-0 backdrop-blur transition group-hover:opacity-100">
+                      <Maximize2 size={11} aria-hidden /> 灯箱查看
+                    </span>
+                  }
+                />
               </div>
 
               {/* Action Toolbar */}
@@ -844,10 +842,11 @@ export function GenerationForm({
                       ].join(" ")}
                       aria-label={`切换到第 ${idx + 1} 张会话结果`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <ResilientImage
                         src={item.imageUrl}
                         alt={`会话缩略图 ${idx + 1}`}
+                        compact
+                        containerClassName="h-full w-full"
                         className="h-full w-full object-cover"
                       />
                     </button>
@@ -900,11 +899,11 @@ export function GenerationForm({
             >
               <X size={18} aria-hidden />
             </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ResilientImage
               src={activeArtwork.imageUrl}
               alt="高清成片大图"
-              className="mt-8 max-h-[78vh] w-auto max-w-full rounded-2xl border border-white/15 bg-[#fbf9f3] object-contain shadow-2xl"
+              containerClassName="mt-8"
+              className="max-h-[78vh] w-auto max-w-full rounded-2xl border border-white/15 bg-[#fbf9f3] object-contain shadow-2xl"
             />
             <div className="flex items-center gap-3 rounded-full bg-[#fbf9f3]/92 px-5 py-2 text-xs text-[#171916] shadow-lg">
               <span>

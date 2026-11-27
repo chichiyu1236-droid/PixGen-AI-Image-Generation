@@ -15,6 +15,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { GenerationFeedback } from "@/components/generation-feedback";
+import { ResilientImage } from "@/components/resilient-image";
 import { aspectRatios, imageTypes, scenes, styles } from "@/lib/prompts/options";
 import type { GenerateRequest } from "@/lib/validation/generate";
 import type { Database, Json } from "@/types/database";
@@ -378,8 +379,7 @@ export function HistoryGrid({ generations }: { generations: Generation[] }) {
             {/* Uncropped Artwork Stage */}
             <div className="relative flex min-h-[260px] items-center justify-center bg-[#f1ede2] p-5 sm:p-7">
               {activeItem.image_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element -- uncropped natural ratio display */
-                <img
+                <ResilientImage
                   src={activeItem.image_url}
                   alt={activeItem.input_subject}
                   className="max-h-[72vh] w-auto max-w-full rounded-xl border border-[#171916]/10 bg-[#fbf9f3] object-contain shadow-[0_20px_50px_rgba(23,25,22,0.12)]"

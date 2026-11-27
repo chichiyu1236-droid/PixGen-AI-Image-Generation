@@ -1,6 +1,6 @@
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { GenerationForm } from "@/components/generation-form";
 
 vi.mock("next/navigation", () => ({
@@ -17,6 +17,8 @@ vi.mock("next/image", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("GenerationForm visual controls", () => {
@@ -37,5 +39,54 @@ describe("GenerationForm visual controls", () => {
     fireEvent.click(screen.getByRole("radio", { name: /奢华商业/ }));
     const styleInput = container.querySelector<HTMLInputElement>('input[name="style"]');
     expect(styleInput?.value).toBe("luxury_commercial");
+  });
+
+  it("retries loading the generated artwork with cache-busting query param after an initial image error", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/health/image-provider") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (url === "/api/generate") {
+        return new Response(
+          JSON.stringify({
+            generation: {
+              id: "gen-retry-1",
+              image_url: "https://cdn.example.test/art-1.png",
+              final_prompt: "minimal bottle",
+              feedback: null,
+            },
+            remainingCredits: { totalCredits: 4 },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockReturnValue({ matches: false }),
+    });
+
+    render(<GenerationForm credits={5} />);
+
+    fireEvent.change(screen.getByPlaceholderText("例如：一瓶高端护肤精华，透明玻璃瓶，银色瓶盖"), {
+      target: { value: "极简护肤品主图" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "生成图片" }));
+
+    const firstImg = await waitFor(() => screen.getByAltText("生成图片结果") as HTMLImageElement);
+    expect(firstImg.getAttribute("src")).toBe("https://cdn.example.test/art-1.png");
+
+    vi.useFakeTimers();
+    fireEvent.error(firstImg);
+
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+    });
+
+    const retriedImg = screen.getByAltText("生成图片结果") as HTMLImageElement;
+    expect(retriedImg.getAttribute("src")).toBe("https://cdn.example.test/art-1.png?_retry=1");
   });
 });

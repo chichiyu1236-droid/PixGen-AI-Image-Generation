@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runAgentTool, type ToolContext } from "@/lib/agent/tools";
+import { listCanvasItems, listCanvasItemsWithError, runAgentTool, type ToolContext } from "@/lib/agent/tools";
 import { editImageBase64, generateImageBase64 } from "@/lib/openai/images";
 import { getImageProviderHealth } from "@/lib/openai/provider-health";
 import { ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
@@ -332,5 +332,35 @@ describe("edit_image", () => {
       "record_successful_generation",
       expect.objectContaining({ p_aspect_ratio: "square" }),
     );
+  });
+});
+
+describe("listCanvasItemsWithError / listCanvasItems", () => {
+  function canvasAdmin(result: { data: unknown; error: unknown }) {
+    return {
+      from: vi.fn(() => ({
+        select: () => ({
+          eq: () => ({
+            order: async () => result,
+          }),
+        }),
+      })),
+    } as unknown as SupabaseClient<Database>;
+  }
+
+  it("distinguishes an explicit empty result from a Supabase query error", async () => {
+    const emptyResult = await listCanvasItemsWithError(canvasAdmin({ data: [], error: null }), "session-1");
+    expect(emptyResult).toEqual({ data: [], error: null });
+
+    const errorResult = await listCanvasItemsWithError(
+      canvasAdmin({ data: null, error: { message: "db_timeout" } }),
+      "session-1",
+    );
+    expect(errorResult).toEqual({ data: null, error: { message: "db_timeout" } });
+  });
+
+  it("keeps listCanvasItems backwards-compatible by returning [] on query error", async () => {
+    const items = await listCanvasItems(canvasAdmin({ data: null, error: { message: "db_timeout" } }), "session-1");
+    expect(items).toEqual([]);
   });
 });
