@@ -110,3 +110,33 @@ Agent 发起生图或改图前 SHALL 检查图像服务可用性，不可用时�
 #### Scenario: 图像服务不可用
 - **WHEN** 图像中继服务返回不可用且用户发起生成
 - **THEN** Agent 回复服务暂不可用提示，规划步骤标记失败，积分余额不变
+
+### Requirement: 图片容错加载与退避重载
+Agent 画布主图、缩略图、对话内出图预览（以及经典结果区与历史图库预览）SHALL 使用 `ResilientImage` 组件呈现图片加载状态与失败恢复。图片加载出错时 SHALL 按指数退避延迟自动重试（默认 `[600, 1500, 3000]` ms），对 `http:`、`https:` 与站内相对路径自动附带 `_retry` 查询参数绕过失败缓存，对 `blob:` 与 `data:` URL 保持原样不改写。自动重试耗尽后 SHALL 展示失败兜底卡片，提供「重新加载图片」手动重载按钮，以及仅面向安全 `http:`/`https:`/站内相对 URL 的「新窗口打开原图」链接；在缩略图紧凑模式（`compact`）下 SHALL 仅使用短语级元素，避免在外部 `<button>` 内嵌套交互按钮。
+
+#### Scenario: 瞬时网络波动自动退避恢复
+- **WHEN** 画布或预览图片首次加载触发 `onError`，随后存储链路恢复
+- **THEN** `ResilientImage` 按默认退避间隔附带 `_retry` 参数自动重试并展示重试进度，加载成功后恢复正常预览
+
+#### Scenario: 重试耗尽后提供手动重载与安全原图链接
+- **WHEN** 图片连续加载失败达到最大重试次数
+- **THEN** 组件展示「图片加载失败」兜底卡片，点击「重新加载图片」重新发起加载；当原图地址为合法 HTTP(S) 或站内相对路径时同时提供「新窗口打开原图」链接
+
+### Requirement: 异常轮次孤儿消息清理与错误文案中文映射
+`POST /api/agent/sessions/[id]/messages` 在写入用户消息后若发生大脑初始化失败、Agent 轮次执行异常或助手回复落库失败，系统 SHALL 决定是否清理已写入的用户消息并在响应体返回布尔字段 `userMessageRemoved`：
+- 创建大脑失败（尚未开始工具执行）时，直接删除该条孤儿用户消息；
+- 轮次执行或助手消息落库失败时，对比轮次前后的画布作品列表：确认未新增任何画布作品时删除该孤儿用户消息；若本轮已产出新作品，或轮次前/后查询画布出错无法确认是否产出新作品时，MUST 保守保留该用户消息（返回 `userMessageRemoved: false`），避免误删关联有效出图的对话记录。
+
+前端工作台 SHALL 通过统一映射函数 `mapAgentErrorMessage` 将全部服务端错误码（如 `agent_turn_failed`、`agent_provider_unavailable`、`agent_membership_required`、`insufficient_credits`、`message_store_failed`、`session_not_found`、`not_authenticated`、`invalid_request` 等）与网络异常映射为明确中文提示，MUST NOT 向用户直接渲染原始英文错误码。
+
+#### Scenario: 失败无出图时自动清理孤儿用户消息
+- **WHEN** 用户发送消息后 Agent 轮次抛错且本轮未产生任何新画布作品
+- **THEN** 服务端删除刚写入的孤儿用户消息并返回 `502 { error: "agent_turn_failed", userMessageRemoved: true }`，前端展示中文繁忙提示（明示未出图不扣积分）
+
+#### Scenario: 已出图或画布查询异常时保守保留用户消息
+- **WHEN** 轮次执行异常或助手消息落库失败，且本轮已产出新画布作品，或轮次前/后的画布列表查询返回错误
+- **THEN** 服务端保留该用户消息并返回 `userMessageRemoved: false`，防止误删已有出图对应的提问记录
+
+#### Scenario: 错误码统一中文展示
+- **WHEN** Agent 接口返回已知错误码或未知英文错误码
+- **THEN** 前端界面均通过 `mapAgentErrorMessage` 渲染友好中文提示，不暴露原始英文代码

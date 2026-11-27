@@ -133,7 +133,7 @@
 
 ## Migration Plan
 
-1. 迁移 `0007_video_workbench.sql` 纯增量向后兼容（新表、新 RPC、私有 bucket、`credit_events` 新类型），先在 Supabase 执行迁移再部署应用。
+1. 迁移 `0008_video_workbench.sql` 纯增量向后兼容（新表、新 RPC、私有 bucket、`credit_events` 新类型），先在 Supabase 执行迁移再部署应用。
 2. 环境变量补齐 `VIDEO_PROVIDER`、`SEEDANCE_API_KEY`、`SEEDANCE_BASE_URL`、`SEEDANCE_MODEL_MINI`、`SEEDANCE_MODEL_STANDARD`、`VIDEO_WEBHOOK_SECRET`、`CRON_SECRET`、`VIDEO_PENDING_TIMEOUT_MINUTES`（默认 30）、`VIDEO_MAX_GLOBAL_ACTIVE`（默认 8）。
 3. 先用 `VIDEO_PROVIDER=mock` 跑通全量 vitest + Playwright E2E，再在预发环境用真实按量 key 实测 1 条 `preview` 和 1 条 `standard` 任务核对 `callback_url`、转存、播放与 `usage.completion_tokens` 账单后放量。
 4. 回滚只需回滚应用代码与 cron 配置；未终结任务可通过管理端或补跑 `refund_video_task` 退款留痕。

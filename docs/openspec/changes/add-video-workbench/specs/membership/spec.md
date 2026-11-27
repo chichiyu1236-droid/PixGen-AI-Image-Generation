@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 定价页与购买入口
-升级页 SHALL 呈现为定价页：免费、标准、Pro 三栏，提供月付/年付切换，年付 SHALL 展示相对月付的节省（约 17%）。免费栏 SHALL 明示免费层权益边界：一次性 5 张试用积分、仅经典生图模式可用，并明示 Agent 对话与视频工作台均为会员专属能力。各付费栏 SHALL 提供微信、支付宝两种支付通道入口，购买流程进入收银台。页面 MUST NOT 提供任何积分包购买入口。
+升级页 SHALL 呈现为定价页：免费、标准、Pro 三栏，提供月付/年付切换，年付 SHALL 展示相对月付的节省（约 17%）。免费栏 SHALL 明示免费层权益边界：一次性 5 张试用积分、仅经典生图模式可用，并明示 Agent 对话与视频工作台均为会员专属能力。支付入口 SHALL 按当前激活的 `BILLING_PROVIDER` 适配：当 `BILLING_PROVIDER=stripe` 时展示 Stripe 托管收银台说明（支持支付宝、微信支付与银行卡，人民币单次付款、不自动续费），下单传 `channel: "stripe"` 并按安全 HTTPS `redirectUrl` 外跳托管收银台；非 Stripe 提供方时展示微信、支付宝两种通道选择，下单进入站内收银台 `/pay/[orderId]`。页面 MUST NOT 提供任何积分包购买入口。
 
 #### Scenario: 月付年付切换
 - **WHEN** 用户在定价页切换月付/年付

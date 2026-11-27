@@ -380,3 +380,14 @@ B1、B2、B3 三个工作区允许新建或修改的文件集合**两两交集�
 2. **严控测试频率**：编码途中仅允许运行 `npm run typecheck` 或单文件 `npx vitest run <单个文件>`；**严禁**中途运行全量 `npm test`、`npm run build` 或 `npm run e2e`。
 3. **收尾局部快测**：本工作区全部代码与测试写完后，按 `tasks.md` 指定的本工作区局部快测命令跑一次（失败修复重跑最多 3 轮），不得删除、跳过或放宽既有断言。
 4. **严守文件边界与安全红线**：不得读取 `.env` / `.env.local`，不得触碰上表「允许新建 / 修改的文件路径」以外的任何文件，不得对生产/共享 Supabase 执行迁移，不得自行 `git push`。
+
+---
+
+## 5. 归档演进尾注（合入后增量修订）
+
+本变更按计划合入主干（`0db69e5`–`943bdc7`）后，上线联调期间又落地了以下 4 项小幅修订，正式行为契约已同步至 `docs/openspec/specs/`：
+
+- **`d09891c`（登录注册入口收敛与错误文案汉化）**：`/login` 将新老用户注册与免密登录统一收口至默认「验证码登录 / 注册」页签，移除密码模式内的独立注册切换，保留邮箱密码登录与「忘记密码 / 首次设置密码」入口，并对 Supabase Auth 错误提示做中文映射。
+- **`509810f`（Stripe Webhook 订单与会话绑定加固）**：`/api/webhooks/stripe` 强制校验 `session.id` 格式、`metadata.order_id === client_reference_id` 与本地 `provider_trade_no` 一致性，异常绑定时按是否唯一命中本地待付订单决定忽略或标记 `flagged`，不再覆盖既有 `provider_trade_no`。
+- **`03b96dc`（Stripe API 版本升级）**：`lib/billing/providers/stripe.ts` 的 `createPayment` 与 `queryOrder` 均显式固定请求头 `Stripe-Version: 2026-09-30.endive`，并将 `POST /v1/checkout/sessions` 废弃的 `payment_method_types[i]` 替换为 `allowed_payment_method_types[i]`。
+- **`05acabf` / `0a2bcd8`（Checkout 邮箱预填与严格校验）**：`POST /api/checkout` 向 `stripeProvider.createPayment` 传入已登录用户的 `customerEmail`，经 `normalizeCustomerEmail` 严格校验本地段、域名标签与 TLD 后以 `customer_email` 预填至 Stripe Checkout Session。

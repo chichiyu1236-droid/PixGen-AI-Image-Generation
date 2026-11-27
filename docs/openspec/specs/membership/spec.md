@@ -14,11 +14,15 @@
 - **THEN** 系统按服务端配置创建订单并按配置发放会员权益，忽略客户端提交的数值
 
 ### Requirement: 定价页与购买入口
-升级页 SHALL 呈现为定价页：免费、标准、Pro 三栏，提供月付/年付切换，年付 SHALL 展示相对月付的节省（约 17%）。免费栏 SHALL 明示免费层权益边界：一次性 5 张试用积分、仅经典生成模式可用，并明示 Agent 对话为会员专属能力。各付费栏 SHALL 提供微信、支付宝两种支付通道入口，购买流程进入收银台。页面 MUST NOT 提供任何积分包购买入口。
+升级页 SHALL 呈现为定价页：免费、标准、Pro 三栏，提供月付/年付切换，年付 SHALL 展示相对月付的节省（约 17%）。免费栏 SHALL 明示免费层权益边界：一次性 5 张试用积分、仅经典生成模式可用，并明示 Agent 对话为会员专属能力。支付入口 SHALL 按当前激活的 `BILLING_PROVIDER` 适配：当 `BILLING_PROVIDER=stripe` 时，页面展示 Stripe 安全托管收银台说明（支持支付宝、微信支付与银行卡，人民币单次付款、不自动续费），隐藏本地通道切换按钮，下单传 `channel: "stripe"` 并校验响应中安全 HTTPS `redirectUrl` 后外跳托管收银台；当 `BILLING_PROVIDER` 为非 Stripe 提供方时，页面提供微信、支付宝两种通道切换，下单进入站内收银台 `/pay/[orderId]`。页底 SHALL 展示 `/terms`、`/privacy`、`/billing` 与客服联系入口。页面 MUST NOT 提供任何积分包购买入口。
 
 #### Scenario: 月付年付切换
 - **WHEN** 用户在定价页切换月付/年付
 - **THEN** 标准与 Pro 栏展示对应周期的价格与每期积分数，年付标示节省幅度
+
+#### Scenario: Stripe 托管收银台外跳购买
+- **WHEN** `BILLING_PROVIDER=stripe` 且已登录用户在定价页点击开通标准或 Pro 会员卡
+- **THEN** 页面隐藏本地微信/支付宝通道切换并展示 Stripe 收银台说明，提交 `channel: "stripe"` 下单并在拿到安全 HTTPS `redirectUrl` 后跳转至 Stripe 托管收银台
 
 #### Scenario: 免费栏差异化表述
 - **WHEN** 用户访问定价页

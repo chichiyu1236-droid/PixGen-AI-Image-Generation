@@ -1,159 +1,81 @@
-# AI Image Generation MVP (PixGen)
+# PixGen (AI Image Generation & Agent Workbench)
 
-Production-ready MVP for structured GPT Image generation, Agent workbench, and CNY membership billing.
+Next.js App Router + Supabase + OpenAI Images API 图像生成、Agent 对话工作台与人民币会员计费应用。
 
 ## Stack
 
-- Next.js App Router
-- Supabase Auth, Postgres, Storage
-- OpenAI Images API
-- Stripe Checkout / Aggregator Payments
+- Next.js App Router (React 19 + TypeScript + Tailwind CSS)
+- Supabase Auth, Postgres (RLS + RPC), Storage
+- OpenAI Images API (or OpenAI-compatible relay)
+- Stripe Checkout (`Stripe-Version: 2026-09-30.endive`) / 聚合支付 / Mock
 - Vercel
 
 ## Local Setup
 
-1. Create `.env.local` in the project root from `.env.example` (all `.env*` files are git-ignored):
+1. 从 [.env.example](.env.example) 复制创建 `.env.local`（全部 `.env*` 已忽略，严禁提交真实凭据）。仓库全部 29 个环境变量的定义与默认值以 [.env.example](.env.example) 为唯一单源；本地最小联调配置：
 
    ```env
-   OPENAI_API_KEY=your-openai-api-key
-   OPENAI_IMAGE_MODEL=gpt-image2
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-   NEXT_PUBLIC_SITE_URL=http://localhost:3000
-   BILLING_PROVIDER=mock
-   MOCK_APP_SECRET=mock-secret
-   ALLOW_MOCK_IN_PRODUCTION=false
-   ORDER_TTL_MINUTES=15
-   AGENT_PROVIDER=mock
+   OPENAI_API_KEY=your-openai-api-key
+   OPENAI_IMAGE_MODEL=gpt-image2
    IMAGE_PROVIDER=mock
+   AGENT_PROVIDER=mock
+   BILLING_PROVIDER=mock
+   ALLOW_MOCK_IN_PRODUCTION=false
    ```
 
-   `AGENT_PROVIDER=mock`、`IMAGE_PROVIDER=mock` 与 `BILLING_PROVIDER=mock` 让本地无需真实外部 LLM/生图/支付 API 即可完整联调；生产环境默认禁止 mock（仅显式设置 `ALLOW_MOCK_IN_PRODUCTION=true` 放行，`"false"` / 空值 / 未设置均视为 `false`）。切真实服务时设置 `AGENT_PROVIDER=real` + `AGENT_LLM_API_KEY`（OpenAI 兼容 function calling，默认智谱 `glm-4.6`）、`IMAGE_PROVIDER=openai` 与正式 `BILLING_PROVIDER`。
+   - 三项 `mock` 配置可在不调用付费 API 的情况下本地联调；生产环境默认禁用所有 `mock`（仅字面量 `ALLOW_MOCK_IN_PRODUCTION=true` 放行，`"false"`/空值/未设置均为 `false`）。
+   - 切真实服务时设置 `IMAGE_PROVIDER=openai`（中继另配 `OPENAI_BASE_URL`）、`AGENT_PROVIDER=real` + `AGENT_LLM_API_KEY`（默认 `glm-4.6`，单轮最大工具迭代见 `AGENT_MAX_ITERATIONS`，范围 `1-10`，默认 `5`）与正式 `BILLING_PROVIDER`。
 
-2. Run `npm install`.
-3. Apply the SQL migrations in `supabase/migrations/` (`0001_initial.sql` through `0007_orders_profiles_fk.sql`) to your local/dev Supabase instance (never run migrations against production/shared Supabase without explicit owner confirmation).
-4. Create a public Supabase Storage bucket named `generated-images`.
-5. Configure Supabase Auth email templates and redirect URLs (see [Supabase Auth Launch Checklist](#supabase-auth-launch-checklist)).
-6. Run `npm run dev`.
+2. 执行 `npm install`。
+3. 按序向本地/开发 Supabase 应用 `supabase/migrations/`（`0001_initial.sql` 至 `0007_orders_profiles_fk.sql`）。**未经 Owner 确认严禁操作生产/共享库。**
+4. 在 Supabase Storage 创建公开桶 `generated-images`。
+5. 按下方 [Supabase Auth Launch Checklist](#supabase-auth-launch-checklist) 配置邮件模板与回调白名单。
+6. 执行 `npm run dev`。
 
 ## Verification
 
-Run:
-
 ```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run e2e
+npm run typecheck    # TypeScript 静态检查
+npm run lint         # ESLint 零警告检查
+npm test             # 全量 Vitest 单元测试（单文件可用 npx vitest run <path>）
+npm run build        # 生产构建检查
+npm run e2e:smoke    # 无真实 Supabase 依赖的 Playwright 烟雾测试
+npm run e2e          # 全量 Playwright E2E（锁定 mock 提供方，无实库凭据时跳过实库用例）
+npm run verify:rls   # 独立测试库 RLS 与核心资金 RPC 校验（见 tests/db/rls-notes.md）
 ```
 
-## Deployment
+## Deployment (Vercel)
 
-Deploy to Vercel and set:
+全量环境变量见 [.env.example](.env.example)，上线重点配置四组变量：
 
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL` (optional; use this for an OpenAI-compatible relay endpoint)
-- `OPENAI_IMAGE_MODEL`
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_SITE_URL`
-- `ADMIN_EMAILS` (optional; comma-separated admin emails for `/admin/credits` and `/admin/orders`)
-- `NEXT_PUBLIC_SUPPORT_EMAIL` (optional; public customer support email rendered on `/pay/[orderId]`, `/billing`, `/terms`, and `/privacy`)
-- `BILLING_PROVIDER` (`mock` for dev/test; `stripe`, `lantu`, or `xunhupay` for production)
-- `STRIPE_SECRET_KEY` (required when `BILLING_PROVIDER=stripe`, e.g. `sk_live_...` / `sk_test_...`)
-- `STRIPE_WEBHOOK_SECRET` (required for `/api/webhooks/stripe` signature verification, e.g. `whsec_...`)
-- `STRIPE_API_BASE` (optional; default `https://api.stripe.com`)
-- `STRIPE_PAYMENT_METHODS` (optional; default `card,alipay,wechat_pay`; comma-separated non-empty subset of `card`, `alipay`, `wechat_pay`)
-- `LANTU_MCH_ID` (蓝兔商户号, required when `BILLING_PROVIDER=lantu`)
-- `LANTU_APP_SECRET` (蓝兔应用密钥, required when `BILLING_PROVIDER=lantu`)
-- `LANTU_API_BASE` (default: `https://api.ltzf.cn`)
-- `XUNHUPAY_APP_ID` (虎皮椒 App ID, required when `BILLING_PROVIDER=xunhupay`)
-- `XUNHUPAY_APP_SECRET` (虎皮椒 App Secret, required when `BILLING_PROVIDER=xunhupay`)
-- `XUNHUPAY_API_BASE` (default: `https://api.xunhupay.com`)
-- `ORDER_TTL_MINUTES` (order expiry in minutes, `1-120`, default: `15`; Stripe sessions automatically enforce a minimum 31-minute expiry to accommodate clock skew)
-- `ALLOW_MOCK_IN_PRODUCTION` (strict boolean: only literal `true` allows `mock` providers in production; `"false"`, empty, or unset all evaluate to `false`)
-- `AGENT_PROVIDER` (`mock` for dev/test, `real` for production)
-- `AGENT_LLM_BASE_URL` (OpenAI-compatible chat endpoint, default: `https://open.bigmodel.cn/api/paas/v4`)
-- `AGENT_LLM_API_KEY` (required when `AGENT_PROVIDER=real`)
-- `AGENT_LLM_MODEL` (default: `glm-4.6`)
-- `IMAGE_PROVIDER` (`openai` default; `mock` returns placeholder images for dev/test)
+1. **站点与 Supabase**：`NEXT_PUBLIC_SITE_URL`、`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`ADMIN_EMAILS`（可选，逗号分隔，控制 `/admin/credits` 与 `/admin/orders` 权限）。
+2. **生图与中继**：`OPENAI_API_KEY`、`OPENAI_BASE_URL`（可选中继）、`OPENAI_IMAGE_MODEL`（默认 `gpt-image2`）、`IMAGE_PROVIDER=openai`。
+3. **Agent 模型**：`AGENT_PROVIDER=real`、`AGENT_LLM_BASE_URL`（默认 `https://open.bigmodel.cn/api/paas/v4`）、`AGENT_LLM_API_KEY`、`AGENT_LLM_MODEL`（默认 `glm-4.6`）、`AGENT_MAX_ITERATIONS`（`1-10`，默认 `5`）。
+4. **计费与合规**：`BILLING_PROVIDER`（推荐 `stripe`，兼容 `lantu` / `xunhupay`）、`ORDER_TTL_MINUTES`（`1-120`，默认 `15`；Stripe 自动取 `>= 31` 分钟）、`NEXT_PUBLIC_SUPPORT_EMAIL`（展示于 `/pay/[orderId]`、`/billing`、`/terms`、`/privacy`）、`ALLOW_MOCK_IN_PRODUCTION=false` 及对应支付通道密钥（见 [.env.example](.env.example) 第 3 节）。
 
-Note on Serverless function timeouts: `/api/generate` exports `maxDuration = 180` and `/api/agent/sessions/[id]/messages` exports `maxDuration = 300` (supported on Vercel Fluid Compute / Pro; if deploying to legacy Hobby without Fluid Compute, adjust `maxDuration` down to `60`).
-
-The default image model is `gpt-image2`. If your OpenAI account or region does not support it, set `OPENAI_IMAGE_MODEL` to another image model available to your account.
-
-For an OpenAI-compatible relay, set:
-
-```env
-OPENAI_API_KEY=your-relay-api-key
-OPENAI_BASE_URL=https://your-relay-domain/v1
-OPENAI_IMAGE_MODEL=gpt-image2
-```
+Serverless 超时：`/api/generate` 导出 `maxDuration = 180`，`/api/agent/sessions/[id]/messages` 导出 `maxDuration = 300`（Fluid Compute / Pro 适用；旧版 Hobby 需下调至 `60`）。
 
 ### Supabase Auth Launch Checklist
 
-PixGen uses email 6-digit OTP (passwordless login/signup) + email password login/reset as the primary CN-friendly entry at `/login`, with Google OAuth as a secondary option. Before launching:
+`/login` 提供 6 位邮箱验证码免密登录/注册（默认页签）+ 邮箱密码登录/找回作为国内主入口，Google OAuth 为次级备选：
 
-1. **Redirect URLs allowlist** (Supabase Dashboard → Authentication → URL Configuration):
-   - Production:
-     - `https://YOUR_DOMAIN/auth/callback`
-     - `https://YOUR_DOMAIN/auth/reset-password`
-   - Local development:
-     - `http://localhost:3000/auth/callback`
-     - `http://localhost:3000/auth/reset-password`
-2. **Email Templates — BOTH `Magic Link` and `Confirm signup` MUST include `{{ .Token }}`**:
-   - Calling `signInWithOtp({ shouldCreateUser: true })` sends the **Magic Link** template for existing users and the **Confirm signup** template for first-time users.
-   - Make sure **both** templates prominently display the 6-digit verification code `{{ .Token }}`, otherwise new users will not receive an OTP code.
-3. **Reset Password email template**:
-   - Configure the **Reset Password** template to link to either:
-     - `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery` (recommended: works across devices and mobile mail apps without PKCE `code_verifier` mismatch), or
-     - `{{ .ConfirmationURL }}` (PKCE callback forwarding to `/auth/callback?next=/auth/reset-password`).
-4. **Google OAuth (optional secondary login)**:
-   - Enable Google provider in Supabase Auth if serving overseas users; the callback URL is `https://YOUR_DOMAIN/auth/callback`.
+1. **Redirect URLs 白名单**（Supabase → Authentication → URL Configuration）：
+   - 生产：`https://YOUR_DOMAIN/auth/callback`、`https://YOUR_DOMAIN/auth/reset-password`
+   - 本地：`http://localhost:3000/auth/callback`、`http://localhost:3000/auth/reset-password`
+2. **邮件模板（`Magic Link` 与 `Confirm signup` 均须包含 `{{ .Token }}`）**：`signInWithOtp({ shouldCreateUser: true })` 对存量用户发 **Magic Link**、对新用户发 **Confirm signup**，两套模板都必须展示 6 位验证码。
+3. **Reset Password 模板**：推荐链接至 `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery`（跨设备不依赖 PKCE），或 `{{ .ConfirmationURL }}`。
+4. **Google OAuth（可选）**：如需海外登录，启用 Google 并配置回调 `https://YOUR_DOMAIN/auth/callback`。
 
-### Billing / Payments
+### Billing & Stripe Launch Checklist
 
-The billing system supports single-payment CNY membership cards via **Stripe Checkout** (`mode: "payment"`, supporting `alipay`, `wechat_pay` with `client=web`, and `card`) as well as legacy aggregator platforms (蓝兔/虎皮椒) and local `mock`. Users can view their membership status, orders, and credit ledger at `/billing`, and review compliance disclosures at `/terms` and `/privacy`.
+计费支持 **Stripe Checkout**（单次人民币 `mode: "payment"`，固定请求头 `Stripe-Version: 2026-09-30.endive`，通过 `allowed_payment_method_types` 启用 `alipay`、`wechat_pay`（`client=web`）与 `card`，并在已登录用户邮箱校验通过时透传 `customer_email` 预填回执邮箱；采用原生 `fetch` + `node:crypto`，无需 `publishable key`）及蓝兔/虎皮椒；用户账单位于 `/billing`，法务页位于 `/terms`、`/privacy`。
 
-**Environment variables:**
-
-| Variable | Required | Description |
-|---|---|---|
-| `BILLING_PROVIDER` | Yes | `mock` (dev/test), `stripe`, `lantu`, or `xunhupay` (production) |
-| `STRIPE_SECRET_KEY` | When `stripe` | Stripe secret key (`sk_test_...` / `sk_live_...`); Stripe integration uses native `fetch` + `node:crypto` and does not need a publishable key |
-| `STRIPE_WEBHOOK_SECRET` | When `stripe` | Webhook signing secret (`whsec_...`) for `/api/webhooks/stripe` |
-| `STRIPE_API_BASE` | No | Default: `https://api.stripe.com` |
-| `STRIPE_PAYMENT_METHODS` | No | Default: `card,alipay,wechat_pay` (comma-separated subset of `card`, `alipay`, `wechat_pay`) |
-| `NEXT_PUBLIC_SUPPORT_EMAIL` | No | Customer support email displayed on `/pay/[orderId]`, `/billing`, `/terms`, `/privacy` |
-| `LANTU_MCH_ID` | When `lantu` | 蓝兔商户号 |
-| `LANTU_APP_SECRET` | When `lantu` | 蓝兔应用密钥 |
-| `LANTU_API_BASE` | No | Default: `https://api.ltzf.cn` |
-| `XUNHUPAY_APP_ID` | When `xunhupay` | 虎皮椒 App ID |
-| `XUNHUPAY_APP_SECRET` | When `xunhupay` | 虎皮椒 App Secret |
-| `XUNHUPAY_API_BASE` | No | Default: `https://api.xunhupay.com` |
-| `MOCK_APP_SECRET` | No | Mock provider secret (default: `mock-secret`) |
-| `ORDER_TTL_MINUTES` | No | Order expiry in minutes (`1-120`, default: `15`; Stripe enforces `>= 31`) |
-| `ALLOW_MOCK_IN_PRODUCTION` | No | Strict boolean (`true` only); defaults to `false` |
-
-**Database migration (`0007_orders_profiles_fk.sql`) & Stripe deployment checklist:**
-
-1. **After explicit Owner confirmation**, apply `supabase/migrations/0007_orders_profiles_fk.sql` to production Supabase (via Supabase SQL Editor or `supabase db push` in a confirmed release window):
-   - Idempotently backfills any missing `public.profiles` rows referenced by existing `orders`.
-   - Adds the explicit FK `orders_user_id_profiles_fkey` (`public.orders(user_id) -> public.profiles(id)`) so `/admin/orders` PostgREST joins `orders(..., profiles(email))` succeed.
-   - Widens `orders_channel_check` to `('wechat', 'alipay', 'stripe')`.
-   - Emits `NOTIFY pgrst, 'reload schema'` to refresh PostgREST's schema cache.
-2. Enable `Alipay`, `WeChat Pay`, and `Card` payment methods in the Stripe Dashboard, then set `BILLING_PROVIDER=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PAYMENT_METHODS`, and `NEXT_PUBLIC_SUPPORT_EMAIL` in Vercel.
-3. Configure a Stripe Webhook endpoint pointing to:
-   - `https://YOUR_DOMAIN/api/webhooks/stripe`
-   - Subscribe to events: `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
-   - Copy the generated `whsec_...` signing secret into `STRIPE_WEBHOOK_SECRET`.
-4. Verify `/terms` and `/privacy` are publicly accessible and list accurate pricing, refund rules, and support email for Stripe merchant compliance review.
-5. Run a test checkout (Stripe test mode first, then a small live self-purchase) to verify both webhook fulfillment and immediate redirect-back reconciliation (`/pay/[orderId]?stripe_session_id=...`), and confirm the paid order and `membership_grant` entry appear on `/billing` and `/admin/orders`.
-6. If using legacy 蓝兔 / 虎皮椒 instead, set `BILLING_PROVIDER=lantu` or `xunhupay` and configure `https://YOUR_DOMAIN/api/webhooks/lantu` (or `/xunhupay`).
-
-**Manual credit adjustment:**
-
-Admins can adjust credits via `/admin/credits` or inspect/query orders via `/admin/orders`. The `adjust_credits` RPC ensures atomicity and records `admin_adjustment` events.
+1. **获 Owner 确认后**向生产库应用 `supabase/migrations/0007_orders_profiles_fk.sql`（补齐 `profiles`、建 `orders_user_id_profiles_fkey`、扩展 `orders_channel_check` 含 `'stripe'` 并 `NOTIFY pgrst, 'reload schema'`）。
+2. 在 Stripe Dashboard 开启 `Alipay`、`WeChat Pay`、`Card`，在 Vercel 配置 `BILLING_PROVIDER=stripe`、`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`STRIPE_PAYMENT_METHODS`、`NEXT_PUBLIC_SUPPORT_EMAIL`。
+3. 配置 Webhook `https://YOUR_DOMAIN/api/webhooks/stripe`，订阅 `checkout.session.completed` 与 `checkout.session.async_payment_succeeded`，将 `whsec_...` 填入 `STRIPE_WEBHOOK_SECRET`。
+4. 核验 `/terms`、`/privacy` 免登录可访问且定价/退款/客服邮箱准确；先在测试模式再以小额正式单验证 Webhook 与跳回即查（`/pay/[orderId]?stripe_session_id=...`），确认 `/billing` 与 `/admin/orders` 正常入账。
+5. 使用蓝兔/虎皮椒时改设 `BILLING_PROVIDER` 并配 `https://YOUR_DOMAIN/api/webhooks/lantu`（或 `/xunhupay`）。管理员可在 `/admin/credits`（`adjust_credits` RPC）调账及 `/admin/orders` 查单/补发。

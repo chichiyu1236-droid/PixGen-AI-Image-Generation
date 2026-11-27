@@ -6,8 +6,8 @@
 
 ## 2. 数据库迁移与资金 RPC
 
-- [ ] 2.1 新增 `supabase/migrations/0007_video_workbench.sql`：`video_generations` 表（统一状态枚举 `queued|running|transferring|succeeded|failed|expired`、`idempotency_key` 唯一约束、`preset_id`/`model_id`/`generate_audio`/`frame_inputs`/`credits_charged`/`credits_sub_split`/`provider_task_id`/`provider_video_url`/`provider_usage_tokens`/`storage_path`/`poster_storage_path`/`transfer_attempts`/`transfer_started_at`/`error_code`/`error_reason`/`refunded_at`/`late_succeeded_at`）+ RLS（仅本人可读）+ 活跃任务部分索引；`credit_events` 类型扩展 `video_charge`/`video_refund`/`video_refund_redirected`；新建**私有** `generated-videos` storage bucket；验证迁移可在 Supabase 应用且 RLS 拒绝跨用户读取
-- [ ] 2.2 在 `0007_video_workbench.sql` 实现三个 `service_role` 专用 RPC（revoke 自 client role）：
+- [ ] 2.1 新增 `supabase/migrations/0008_video_workbench.sql`：`video_generations` 表（统一状态枚举 `queued|running|transferring|succeeded|failed|expired`、`idempotency_key` 唯一约束、`preset_id`/`model_id`/`generate_audio`/`frame_inputs`/`credits_charged`/`credits_sub_split`/`provider_task_id`/`provider_video_url`/`provider_usage_tokens`/`storage_path`/`poster_storage_path`/`transfer_attempts`/`transfer_started_at`/`error_code`/`error_reason`/`refunded_at`/`late_succeeded_at`）+ RLS（仅本人可读）+ 活跃任务部分索引；`credit_events` 类型扩展 `video_charge`/`video_refund`/`video_refund_redirected`；新建**私有** `generated-videos` storage bucket；验证迁移可在 Supabase 应用且 RLS 拒绝跨用户读取
+- [ ] 2.2 在 `0008_video_workbench.sql` 实现三个 `service_role` 专用 RPC（revoke 自 client role）：
   - `submit_video_task`：幂等键重放 → 锁 profile → 过期订阅池清零 → **先清理该用户超时僵尸任务并退款** → 单用户上限（3）与全站并发闸门校验 → 双池原子预扣并写 `credits_sub_split` 与 `video_charge` → 插入 `queued` 任务
   - `refund_video_task`：基于 `refunded_at is null` 的幂等终态翻转 + 跨周期退款规则（原订阅池未过期回订阅池记 `video_refund`，已过期改退永久池记 `video_refund_redirected`）
   - `claim_video_transfer`：原子抢占 `transferring` 锁（含 2 分钟陈旧锁回收与 3 次上限）

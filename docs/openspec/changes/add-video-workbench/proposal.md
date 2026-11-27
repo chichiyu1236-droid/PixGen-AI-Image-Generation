@@ -36,7 +36,7 @@
 
 ## Impact
 
-- **数据库**：新迁移 `supabase/migrations/0007_video_workbench.sql`——`video_generations` 表（含 `idempotency_key`、`preset_id`、`model_id`、`frame_inputs`、`poster_url`、`provider_usage_tokens`、`transfer_attempts`、`refunded_at`、`late_succeeded_at`）、`submit_video_task` / `refund_video_task` / `claim_video_transfer` RPC、`credit_events` 新增 `video_charge` / `video_refund` / `video_refund_redirected`、私有 `generated-videos` bucket。
+- **数据库**：新迁移 `supabase/migrations/0008_video_workbench.sql`——`video_generations` 表（含 `idempotency_key`、`preset_id`、`model_id`、`frame_inputs`、`poster_url`、`provider_usage_tokens`、`transfer_attempts`、`refunded_at`、`late_succeeded_at`）、`submit_video_task` / `refund_video_task` / `claim_video_transfer` RPC、`credit_events` 新增 `video_charge` / `video_refund` / `video_refund_redirected`、私有 `generated-videos` bucket。
 - **后端**：`lib/video/`（目录与定价常量 `catalog.ts`、会员门控、Seedance 客户端、mock provider、健康守卫、首帧与转存逻辑）、`app/api/video/`（提交/列表/详情/下载）、`app/api/webhooks/video/seedance/`、`app/api/cron/video-reconcile/`、`lib/storage/videos.ts`、`lib/env.ts`、`vercel.json`（cron）。
 - **前端**：`app/video/page.tsx`、导航入口、创建区与预设选择器、任务卡流与退避轮询 hook、首帧选择器、`history-grid` 混排与 `/generate`、Agent 画布、历史卡上的「生成视频」快捷入口、定价页 `/upgrade` 权益文案同步。
 - **测试**：vitest 单测（目录与毛利底线断言、参数校验、会员门控、Seedance 结构化请求与错误分类、转存重试与跨周期退款）+ Playwright e2e（mock provider 全链路）。
