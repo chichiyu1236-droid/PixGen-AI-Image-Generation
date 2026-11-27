@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "e2e:smoke": "playwright test e2e/smoke.spec.ts e2e/compliance-and-billing.spec.ts",
+    "verify:rls": "node scripts/verify-rls.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

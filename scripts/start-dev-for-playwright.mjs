@@ -36,10 +36,10 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? fileEnv.SUPABASE_SERVICE_ROLE_KEY ?? "test-service-role-key",
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL ?? fileEnv.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   ADMIN_EMAILS: process.env.ADMIN_EMAILS ?? fileEnv.ADMIN_EMAILS,
-  BILLING_PROVIDER: process.env.BILLING_PROVIDER ?? fileEnv.BILLING_PROVIDER ?? "mock",
-  // E2E must not depend on the paid image relay or an external LLM.
-  IMAGE_PROVIDER: process.env.IMAGE_PROVIDER ?? fileEnv.IMAGE_PROVIDER ?? "mock",
-  AGENT_PROVIDER: process.env.AGENT_PROVIDER ?? fileEnv.AGENT_PROVIDER ?? "mock",
+  // E2E must never depend on paid image relays, external LLMs, or real payment gateways.
+  BILLING_PROVIDER: "mock",
+  IMAGE_PROVIDER: "mock",
+  AGENT_PROVIDER: "mock",
 };
 
 const command = process.platform === "win32" ? "cmd.exe" : "npm";

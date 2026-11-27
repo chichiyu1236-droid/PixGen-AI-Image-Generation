@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
-    environment: "jsdom",
+    environment: "node",
+    environmentMatchGlobs: [
+      ["tests/components/**", "jsdom"],
+      ["tests/pages/**", "jsdom"],
+    ],
     globals: true,
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },

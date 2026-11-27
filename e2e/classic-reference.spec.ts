@@ -1,10 +1,18 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { deflateSync } from "node:zlib";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+const hasRealSupabase = Boolean(
+  supabaseUrl &&
+    supabaseAnonKey &&
+    supabaseServiceKey &&
+    !supabaseUrl.includes("example.supabase.co") &&
+    !supabaseUrl.includes("your-project.supabase.co"),
+);
 
 function projectRef(url: string): string {
   return new URL(url).hostname.split(".")[0];
@@ -19,9 +27,11 @@ function authCookie(session: unknown): { name: string; value: string; domain: st
   };
 }
 
-const admin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+function getAdminClient(): SupabaseClient {
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 /** A valid 64x64 RGB PNG (filter-less scanlines, gradient fill) for upload flows. */
 function makeReferencePng(size = 64): Buffer {
@@ -80,12 +90,18 @@ function makeReferencePng(size = 64): Buffer {
 const referencePng = makeReferencePng();
 
 test.describe("Classic reference images", () => {
+  test.skip(
+    !hasRealSupabase,
+    "Requires real Supabase test credentials (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)",
+  );
+
   const stamp = Date.now();
   const email = `e2e-ref-${stamp}@example.com`;
   const password = `E2e!Ref${stamp}`;
   let userId = "";
 
   test.beforeAll(async () => {
+    const admin = getAdminClient();
     const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
     if (error) throw error;
     userId = data.user.id;
@@ -93,6 +109,7 @@ test.describe("Classic reference images", () => {
 
   test.afterAll(async () => {
     if (userId) {
+      const admin = getAdminClient();
       await admin.auth.admin.deleteUser(userId);
     }
   });

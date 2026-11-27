@@ -24,10 +24,11 @@ function loadEnvFile() {
 
 loadEnvFile();
 
-// The agent spec asserts scripted mock-brain replies and real image
-// generation is too slow/flaky for tests - never leak local provider config.
+// The E2E specs assert scripted mock-brain replies, mock images, and mock
+// billing webhooks - never leak local provider config into tests.
 process.env.AGENT_PROVIDER = "mock";
 process.env.IMAGE_PROVIDER = "mock";
+process.env.BILLING_PROVIDER = "mock";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -44,6 +45,7 @@ export default defineConfig({
     env: {
       AGENT_PROVIDER: "mock",
       IMAGE_PROVIDER: "mock",
+      BILLING_PROVIDER: "mock",
     },
   },
   projects: [

@@ -1,12 +1,20 @@
 import { createHash } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { test, expect } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const MOCK_SECRET = process.env.MOCK_APP_SECRET ?? "mock-secret";
+
+const hasRealSupabase = Boolean(
+  supabaseUrl &&
+    supabaseAnonKey &&
+    supabaseServiceKey &&
+    !supabaseUrl.includes("example.supabase.co") &&
+    !supabaseUrl.includes("your-project.supabase.co"),
+);
 
 function projectRef(url: string): string {
   return new URL(url).hostname.split(".")[0];
@@ -34,13 +42,20 @@ function buildCallbackParams(input: { orderId: string; amountFen: number }): Rec
   return { ...params, sign: signParams(params, MOCK_SECRET) };
 }
 
-const admin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+function getAdminClient(): SupabaseClient {
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 test.describe.configure({ mode: "serial" });
 
 test.describe("Membership flow", () => {
+  test.skip(
+    !hasRealSupabase,
+    "Requires real Supabase test credentials (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)",
+  );
+
   const stamp = Date.now();
   const email = `e2e-member-${stamp}@example.com`;
   const password = `E2e!Mem${stamp}`;
@@ -65,6 +80,7 @@ test.describe("Membership flow", () => {
 
   /** Waits for the cashier, pays the pending plan order through the mock webhook. */
   async function payCurrentPlanOrder(page: Page): Promise<string> {
+    const admin = getAdminClient();
     await page.waitForURL(/\/pay\//, { timeout: 30_000 });
     const orderId = new URL(page.url()).pathname.split("/").pop()!;
 
@@ -87,6 +103,7 @@ test.describe("Membership flow", () => {
   }
 
   test.beforeAll(async () => {
+    const admin = getAdminClient();
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
@@ -98,12 +115,14 @@ test.describe("Membership flow", () => {
 
   test.afterAll(async () => {
     if (userId) {
+      const admin = getAdminClient();
       await admin.auth.admin.deleteUser(userId);
     }
   });
 
   test("buying the standard monthly card fulfills membership and grants the first tranche", async ({ page }) => {
     test.slow();
+    const admin = getAdminClient();
     await signIn(page);
     await page.goto("/upgrade");
     await expect(page.getByText("免费体验")).toBeVisible();
@@ -139,6 +158,7 @@ test.describe("Membership flow", () => {
   });
 
   test("generation charging prefers the subscription pool", async () => {
+    const admin = getAdminClient();
     const { data, error } = await admin.rpc("record_successful_generation", {
       p_user_id: userId,
       p_image_url: "https://example.com/e2e-membership.png",
@@ -168,6 +188,7 @@ test.describe("Membership flow", () => {
 
   test("renewing within the membership extends paid_until and stacks quota", async ({ page }) => {
     test.slow();
+    const admin = getAdminClient();
     await signIn(page);
     await page.goto("/upgrade");
     await page.getByRole("button", { name: "立即开通" }).first().click();
@@ -183,6 +204,7 @@ test.describe("Membership flow", () => {
 
   test("buying a yearly card mid-cycle upgrades the plan and queues remaining tranches", async ({ page }) => {
     test.slow();
+    const admin = getAdminClient();
     await signIn(page);
     await page.goto("/upgrade");
     await page.getByRole("button", { name: "年付省 17%" }).click();
@@ -207,6 +229,7 @@ test.describe("Membership flow", () => {
   });
 
   test("expired subscription pool zeroes on read; the permanent pool still pays for generations", async ({ page }) => {
+    const admin = getAdminClient();
     await admin
       .from("profiles")
       .update({ credits: 7, sub_credits_expires_at: new Date(Date.now() - 60_000).toISOString() })
@@ -241,6 +264,7 @@ test.describe("Membership flow", () => {
   });
 
   test("skipped periods forfeit and only the current period grants on return", async ({ page }) => {
+    const admin = getAdminClient();
     await admin
       .from("memberships")
       .update({
@@ -265,6 +289,7 @@ test.describe("Membership flow", () => {
     expect(nextGrant).toBeLessThan(Date.now() + 31 * DAY_MS);
   });
   test("shows the renewal notice during the last 3 days of the membership", async ({ page }) => {
+    const admin = getAdminClient();
     await admin
       .from("memberships")
       .update({ paid_until: new Date(Date.now() + 2 * DAY_MS).toISOString() })

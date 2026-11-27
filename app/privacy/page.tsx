@@ -93,7 +93,7 @@ export default function PrivacyPage() {
                 <strong className="font-medium text-[#171916]">人工智能模型推理服务</strong>：仅在发起生成或改图时发送你提交的提示词与参考图以产出结果。
               </li>
               <li>
-                <strong className="font-medium text-[#171916]">支付服务商（Stripe 等）</strong>：仅传输订单编号、商品名称与人民币金额，用于完成收款及回调验签。
+                <strong className="font-medium text-[#171916]">支付服务商（Stripe 等）</strong>：仅传输订单编号、商品名称、人民币金额，以及用于预填支付回执与风控校验的已登录用户账号邮箱，用于完成收款及回调验签。
               </li>
             </ul>
           </section>
