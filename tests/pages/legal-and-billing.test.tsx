@@ -152,7 +152,7 @@ describe("Legal static pages (/terms and /privacy)", () => {
     expect(screen.getByText(/不留存银行卡号与支付密码/)).toBeDefined();
     expect(screen.getByText(/绝不收集、不经手也不存储/)).toBeDefined();
     expect(screen.getByText(/已登录用户账号邮箱/)).toBeDefined();
-    expect(screen.getByText(/预填支付回执与风控校验/)).toBeDefined();
+    expect(screen.getByText(/预填收银台与支付回执/)).toBeDefined();
     expect(screen.getByText(/行级安全策略（RLS）/)).toBeDefined();
     expect(screen.getByText(/删除个人账号与作品数据/)).toBeDefined();
 

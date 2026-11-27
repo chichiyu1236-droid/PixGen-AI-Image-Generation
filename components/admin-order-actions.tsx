@@ -12,6 +12,7 @@ type AdminOrder = {
 const ADMIN_ORDER_ERROR_MESSAGES: Record<string, string> = {
   forbidden: "无管理员权限，无法执行该操作。",
   not_authenticated: "登录状态已失效，请重新登录后重试。",
+  order_list_failed: "订单列表加载失败，请稍后重试。",
   order_not_found: "未找到该订单，请刷新列表重试。",
   provider_mismatch: "该订单所属支付通道与当前配置不一致，无法查单。",
   provider_query_failed: "向支付平台查询订单状态失败，请稍后重试。",

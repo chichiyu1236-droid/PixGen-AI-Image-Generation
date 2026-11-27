@@ -40,7 +40,9 @@ export default defineConfig({
   webServer: {
     command: "node scripts/start-dev-for-playwright.mjs",
     url: "http://localhost:3000",
-    reuseExistingServer: true,
+    // Default to starting a dedicated mock-locked server so a developer's local
+    // dev server with real provider keys cannot silently hijack E2E runs.
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === "true",
     timeout: 120_000,
     env: {
       AGENT_PROVIDER: "mock",

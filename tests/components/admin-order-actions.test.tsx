@@ -24,7 +24,9 @@ describe("mapAdminOrderErrorMessage", () => {
   it("maps known admin order error codes to Chinese and never leaks unknown raw English errors", () => {
     expect(mapAdminOrderErrorMessage("forbidden")).toContain("无管理员权限");
     expect(mapAdminOrderErrorMessage("not_authenticated")).toContain("登录状态已失效");
+    expect(mapAdminOrderErrorMessage("order_list_failed")).toContain("订单列表加载失败");
     expect(mapAdminOrderErrorMessage("order_not_found")).toContain("未找到该订单");
+    expect(mapAdminOrderErrorMessage("invalid_request")).toContain("请求参数无效");
     expect(mapAdminOrderErrorMessage("provider_query_failed")).toContain("向支付平台查询订单状态失败");
     expect(mapAdminOrderErrorMessage("fulfill_failed")).toContain("订单补发失败");
     expect(mapAdminOrderErrorMessage("provider_mismatch")).toContain("支付通道与当前配置不一致");
