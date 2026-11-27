@@ -13,12 +13,26 @@ import type {
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 export const STRIPE_SESSION_ID_REGEX = /^cs_[A-Za-z0-9_]+$/;
+const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Stripe requires Checkout Session expires_at to be at least 30m from creation; add 1m clock-skew margin. */
 export const STRIPE_MIN_TTL_MINUTES = 31;
 export const STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300;
 
 export function isValidStripeSessionId(value: string | null | undefined): value is string {
   return typeof value === "string" && STRIPE_SESSION_ID_REGEX.test(value);
+}
+
+function normalizeCustomerEmail(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 320 || !BASIC_EMAIL_REGEX.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
 }
 
 function stripeBaseConfig() {
@@ -125,6 +139,12 @@ async function createPayment(input: CreatePaymentInput): Promise<CreatePaymentRe
   params.set("locale", "zh");
   params.set("client_reference_id", input.orderId);
   params.set("metadata[order_id]", input.orderId);
+
+  const customerEmail = normalizeCustomerEmail(input.customerEmail);
+  if (customerEmail) {
+    params.set("customer_email", customerEmail);
+  }
+
   params.set("success_url", `${siteUrl}/pay/${input.orderId}?stripe_session_id={CHECKOUT_SESSION_ID}`);
   params.set("cancel_url", `${siteUrl}/pay/${input.orderId}?canceled=1`);
   params.set("expires_at", String(expiresAtSec));

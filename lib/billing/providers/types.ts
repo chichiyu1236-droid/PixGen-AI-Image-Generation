@@ -7,6 +7,7 @@ export interface CreatePaymentInput {
   channel: PayChannel;
   notifyUrl: string;
   ttlMinutes: number;
+  customerEmail?: string | null;
 }
 
 export interface CreatePaymentResult {

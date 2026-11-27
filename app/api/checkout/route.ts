@@ -157,6 +157,7 @@ export async function POST(request: Request) {
       channel: effectiveChannel,
       notifyUrl: getWebhookUrl(provider.id),
       ttlMinutes: effectiveTtlMinutes,
+      customerEmail: user.email?.trim() || undefined,
     });
   } catch (error) {
     console.error(error);

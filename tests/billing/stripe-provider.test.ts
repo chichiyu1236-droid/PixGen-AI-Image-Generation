@@ -108,6 +108,54 @@ describe("stripeProvider.createPayment", () => {
     expect(body.get("allowed_payment_method_types[2]")).toBe("wechat_pay");
     expect(body.get("payment_method_types[0]")).toBeNull();
     expect(body.get("payment_method_options[wechat_pay][client]")).toBe("web");
+    expect(body.get("customer_email")).toBeNull();
+  });
+
+  it("includes trimmed customer_email when a valid customerEmail is provided", async () => {
+    await stripeProvider.createPayment({
+      orderId: ORDER_ID,
+      amountFen: 1990,
+      body: "标准月卡: 每期 100 张",
+      channel: "stripe",
+      notifyUrl: "https://pixgen.example.com/api/webhooks/stripe",
+      ttlMinutes: 15,
+      customerEmail: "  buyer+test@example.com  ",
+    });
+
+    const body = lastFetchBody();
+    expect(body.get("customer_email")).toBe("buyer+test@example.com");
+  });
+
+  it("omits customer_email without failing when customerEmail is missing, blank, or invalid", async () => {
+    const invalidEmails: Array<string | null | undefined> = [
+      undefined,
+      null,
+      "",
+      "   ",
+      "not-an-email",
+      "@example.com",
+      "user@",
+      "user@localhost",
+      "user name@example.com",
+      "user@@example.com",
+    ];
+
+    for (const customerEmail of invalidEmails) {
+      vi.mocked(fetch).mockClear();
+
+      const result = await stripeProvider.createPayment({
+        orderId: ORDER_ID,
+        amountFen: 1990,
+        body: "标准月卡: 每期 100 张",
+        channel: "stripe",
+        notifyUrl: "https://pixgen.example.com/api/webhooks/stripe",
+        ttlMinutes: 15,
+        customerEmail,
+      });
+
+      expect(result.providerTradeNo).toBe("cs_test_session_1");
+      expect(lastFetchBody().get("customer_email")).toBeNull();
+    }
   });
 
   it("omits wechat_pay client option when wechat_pay is excluded and preserves ttlMinutes > 31", async () => {

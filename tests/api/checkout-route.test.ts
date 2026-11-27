@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/checkout/route";
-import type { CreatePaymentResult } from "@/lib/billing/providers/types";
+import type { CreatePaymentInput, CreatePaymentResult } from "@/lib/billing/providers/types";
 
 const state = vi.hoisted(() => ({
-  user: { id: "user-1", email: "user@example.com" } as { id: string; email: string } | null,
+  user: { id: "user-1", email: "user@example.com" } as { id: string; email?: string | null } | null,
   providerId: "mock",
   reusableOrder: null as { id: string; pay_url?: string | null; provider?: string } | null,
   reuseFilters: [] as Array<{ column: string; value: unknown }>,
@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 }));
 
 const providerMocks = vi.hoisted(() => ({
-  createPayment: vi.fn<() => Promise<CreatePaymentResult>>(async () => ({
+  createPayment: vi.fn<(input: CreatePaymentInput) => Promise<CreatePaymentResult>>(async () => ({
     payUrl: "mock://pay/wechat/new-order",
     providerTradeNo: null,
     raw: {},
@@ -307,6 +307,7 @@ describe("POST /api/checkout", () => {
         channel: "stripe",
         ttlMinutes: 31,
         notifyUrl: "http://localhost:3000/api/webhooks/stripe",
+        customerEmail: "user@example.com",
       }),
     );
 
@@ -315,6 +316,37 @@ describe("POST /api/checkout", () => {
       pay_url: "https://checkout.stripe.com/c/pay/cs_test_abc",
       provider_trade_no: "cs_test_abc",
     });
+  });
+
+  it("passes trimmed user.email as customerEmail and handles missing or blank user.email", async () => {
+    state.providerId = "stripe";
+    state.user = { id: "user-1", email: "  buyer@example.com  " };
+    providerMocks.createPayment.mockResolvedValueOnce({
+      payUrl: "https://checkout.stripe.com/c/pay/cs_test_email_1",
+      redirectUrl: "https://checkout.stripe.com/c/pay/cs_test_email_1",
+      providerTradeNo: "cs_test_email_1",
+      raw: {},
+    });
+
+    const trimmedRes = await postCheckout({ planId: "std-month" });
+    expect(trimmedRes.status).toBe(200);
+    expect(providerMocks.createPayment).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerEmail: "buyer@example.com" }),
+    );
+
+    for (const email of [undefined, null, "", "   "]) {
+      state.user = email === undefined ? { id: "user-1" } : { id: "user-1", email };
+      providerMocks.createPayment.mockResolvedValueOnce({
+        payUrl: "https://checkout.stripe.com/c/pay/cs_test_email_empty",
+        redirectUrl: "https://checkout.stripe.com/c/pay/cs_test_email_empty",
+        providerTradeNo: "cs_test_email_empty",
+        raw: {},
+      });
+
+      const res = await postCheckout({ planId: "std-month" });
+      expect(res.status).toBe(200);
+      expect(providerMocks.createPayment.mock.calls.at(-1)?.[0].customerEmail).toBeUndefined();
+    }
   });
 
   it("returns redirectUrl when reusing a fresh pending Stripe order", async () => {
