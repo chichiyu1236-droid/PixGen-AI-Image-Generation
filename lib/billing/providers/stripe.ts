@@ -11,6 +11,7 @@ import type {
   QueryOrderResult,
 } from "@/lib/billing/providers/types";
 
+export const STRIPE_API_VERSION = "2026-09-30.endive";
 export const STRIPE_SESSION_ID_REGEX = /^cs_[A-Za-z0-9_]+$/;
 /** Stripe requires Checkout Session expires_at to be at least 30m from creation; add 1m clock-skew margin. */
 export const STRIPE_MIN_TTL_MINUTES = 31;
@@ -133,7 +134,7 @@ async function createPayment(input: CreatePaymentInput): Promise<CreatePaymentRe
   params.set("line_items[0][quantity]", "1");
 
   paymentMethods.forEach((method, index) => {
-    params.set(`payment_method_types[${index}]`, method);
+    params.set(`allowed_payment_method_types[${index}]`, method);
   });
 
   if (paymentMethods.includes("wechat_pay")) {
@@ -146,6 +147,7 @@ async function createPayment(input: CreatePaymentInput): Promise<CreatePaymentRe
       Authorization: `Bearer ${secretKey}`,
       "Content-Type": "application/x-www-form-urlencoded",
       "Idempotency-Key": `checkout_${input.orderId}`,
+      "Stripe-Version": STRIPE_API_VERSION,
     },
     body: params.toString(),
   });
@@ -193,6 +195,7 @@ async function queryOrder(input: QueryOrderInput): Promise<QueryOrderResult> {
     method: "GET",
     headers: {
       Authorization: `Bearer ${secretKey}`,
+      "Stripe-Version": STRIPE_API_VERSION,
     },
   });
 

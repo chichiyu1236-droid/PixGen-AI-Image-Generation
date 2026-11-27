@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isValidStripeSessionId,
+  STRIPE_API_VERSION,
   STRIPE_MIN_TTL_MINUTES,
   stripeProvider,
   verifyStripeWebhookSignature,
@@ -53,7 +54,7 @@ afterEach(() => {
 });
 
 describe("stripeProvider.createPayment", () => {
-  it("creates a CNY Checkout Session with form encoding, wechat_pay web option, 31m minimum TTL, and Idempotency-Key", async () => {
+  it("creates a CNY Checkout Session with Stripe-Version, allowed_payment_method_types, wechat_pay web option, 31m minimum TTL, and Idempotency-Key", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-01T12:00:00.000Z"));
     const nowSec = Math.floor(Date.now() / 1000);
@@ -78,12 +79,14 @@ describe("stripeProvider.createPayment", () => {
     });
 
     const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(STRIPE_API_VERSION).toBe("2026-09-30.endive");
     expect(String(url)).toBe("https://api.stripe.test/v1/checkout/sessions");
     expect(init?.method).toBe("POST");
     expect(init?.headers).toEqual({
       Authorization: "Bearer sk_test_123456",
       "Content-Type": "application/x-www-form-urlencoded",
       "Idempotency-Key": `checkout_${ORDER_ID}`,
+      "Stripe-Version": "2026-09-30.endive",
     });
 
     const body = lastFetchBody();
@@ -100,9 +103,10 @@ describe("stripeProvider.createPayment", () => {
     expect(body.get("line_items[0][price_data][unit_amount]")).toBe("1990");
     expect(body.get("line_items[0][price_data][product_data][name]")).toBe("标准月卡: 每期 100 张");
     expect(body.get("line_items[0][quantity]")).toBe("1");
-    expect(body.get("payment_method_types[0]")).toBe("card");
-    expect(body.get("payment_method_types[1]")).toBe("alipay");
-    expect(body.get("payment_method_types[2]")).toBe("wechat_pay");
+    expect(body.get("allowed_payment_method_types[0]")).toBe("card");
+    expect(body.get("allowed_payment_method_types[1]")).toBe("alipay");
+    expect(body.get("allowed_payment_method_types[2]")).toBe("wechat_pay");
+    expect(body.get("payment_method_types[0]")).toBeNull();
     expect(body.get("payment_method_options[wechat_pay][client]")).toBe("web");
   });
 
@@ -122,9 +126,10 @@ describe("stripeProvider.createPayment", () => {
     });
 
     const body = lastFetchBody();
-    expect(body.get("payment_method_types[0]")).toBe("card");
-    expect(body.get("payment_method_types[1]")).toBe("alipay");
-    expect(body.get("payment_method_types[2]")).toBeNull();
+    expect(body.get("allowed_payment_method_types[0]")).toBe("card");
+    expect(body.get("allowed_payment_method_types[1]")).toBe("alipay");
+    expect(body.get("allowed_payment_method_types[2]")).toBeNull();
+    expect(body.get("payment_method_types[0]")).toBeNull();
     expect(body.get("payment_method_options[wechat_pay][client]")).toBeNull();
     expect(body.get("expires_at")).toBe(String(nowSec + 60 * 60));
   });
@@ -215,9 +220,13 @@ describe("stripeProvider.queryOrder", () => {
 
     expect(result.paid).toBe(true);
     expect(result.providerTradeNo).toBe("cs_test_paid_123");
-    expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe(
-      "https://api.stripe.test/v1/checkout/sessions/cs_test_paid_123",
-    );
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toBe("https://api.stripe.test/v1/checkout/sessions/cs_test_paid_123");
+    expect(init?.method).toBe("GET");
+    expect(init?.headers).toEqual({
+      Authorization: "Bearer sk_test_123456",
+      "Stripe-Version": "2026-09-30.endive",
+    });
   });
 
   it("rejects mismatched metadata order_id, client_reference_id, amount, currency, or unpaid status", async () => {
