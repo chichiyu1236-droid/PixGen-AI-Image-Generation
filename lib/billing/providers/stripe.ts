@@ -13,7 +13,12 @@ import type {
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 export const STRIPE_SESSION_ID_REGEX = /^cs_[A-Za-z0-9_]+$/;
-const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_LENGTH = 254;
+const MAX_EMAIL_LOCAL_LENGTH = 64;
+const MAX_EMAIL_DOMAIN_LABEL_LENGTH = 63;
+const EMAIL_LOCAL_CHARS_REGEX = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/;
+const EMAIL_DOMAIN_LABEL_REGEX = /^[A-Za-z0-9-]+$/;
+const ALL_DIGITS_REGEX = /^\d+$/;
 /** Stripe requires Checkout Session expires_at to be at least 30m from creation; add 1m clock-skew margin. */
 export const STRIPE_MIN_TTL_MINUTES = 31;
 export const STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300;
@@ -28,7 +33,51 @@ function normalizeCustomerEmail(value: string | null | undefined): string | null
   }
 
   const normalized = value.trim();
-  if (!normalized || normalized.length > 320 || !BASIC_EMAIL_REGEX.test(normalized)) {
+  if (!normalized || normalized.length > MAX_EMAIL_LENGTH) {
+    return null;
+  }
+
+  const atIndex = normalized.indexOf("@");
+  if (atIndex <= 0 || atIndex !== normalized.lastIndexOf("@")) {
+    return null;
+  }
+
+  const local = normalized.slice(0, atIndex);
+  const domain = normalized.slice(atIndex + 1);
+
+  if (
+    local.length > MAX_EMAIL_LOCAL_LENGTH ||
+    local.startsWith(".") ||
+    local.endsWith(".") ||
+    local.includes("..") ||
+    !EMAIL_LOCAL_CHARS_REGEX.test(local)
+  ) {
+    return null;
+  }
+
+  if (!domain || domain.startsWith(".") || domain.endsWith(".") || domain.includes("..")) {
+    return null;
+  }
+
+  const labels = domain.split(".");
+  if (labels.length < 2) {
+    return null;
+  }
+
+  for (const label of labels) {
+    if (
+      !label ||
+      label.length > MAX_EMAIL_DOMAIN_LABEL_LENGTH ||
+      label.startsWith("-") ||
+      label.endsWith("-") ||
+      !EMAIL_DOMAIN_LABEL_REGEX.test(label)
+    ) {
+      return null;
+    }
+  }
+
+  const tld = labels[labels.length - 1];
+  if (tld.length < 2 || ALL_DIGITS_REGEX.test(tld)) {
     return null;
   }
 

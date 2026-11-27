@@ -112,18 +112,27 @@ describe("stripeProvider.createPayment", () => {
   });
 
   it("includes trimmed customer_email when a valid customerEmail is provided", async () => {
-    await stripeProvider.createPayment({
-      orderId: ORDER_ID,
-      amountFen: 1990,
-      body: "标准月卡: 每期 100 张",
-      channel: "stripe",
-      notifyUrl: "https://pixgen.example.com/api/webhooks/stripe",
-      ttlMinutes: 15,
-      customerEmail: "  buyer+test@example.com  ",
-    });
+    const validEmails = [
+      { input: "  buyer+test@example.com  ", expected: "buyer+test@example.com" },
+      { input: "first.last+tag@sub.example.co.uk", expected: "first.last+tag@sub.example.co.uk" },
+      { input: "user@my-sub.example-1.com", expected: "user@my-sub.example-1.com" },
+    ];
 
-    const body = lastFetchBody();
-    expect(body.get("customer_email")).toBe("buyer+test@example.com");
+    for (const { input, expected } of validEmails) {
+      vi.mocked(fetch).mockClear();
+
+      await stripeProvider.createPayment({
+        orderId: ORDER_ID,
+        amountFen: 1990,
+        body: "标准月卡: 每期 100 张",
+        channel: "stripe",
+        notifyUrl: "https://pixgen.example.com/api/webhooks/stripe",
+        ttlMinutes: 15,
+        customerEmail: input,
+      });
+
+      expect(lastFetchBody().get("customer_email")).toBe(expected);
+    }
   });
 
   it("omits customer_email without failing when customerEmail is missing, blank, or invalid", async () => {
@@ -138,6 +147,21 @@ describe("stripeProvider.createPayment", () => {
       "user@localhost",
       "user name@example.com",
       "user@@example.com",
+      "a..b@example.com",
+      ".a@example.com",
+      "a.@example.com",
+      "a@.example.com",
+      "a@example..com",
+      "a@example.com.",
+      "a@-example.com",
+      "a@example-.com",
+      "a@sub.-example.com",
+      "a@ex_ample.com",
+      "a@example.c",
+      "a@127.0.0.1",
+      `${"a".repeat(65)}@example.com`,
+      `a@${"b".repeat(64)}.com`,
+      `${"a".repeat(60)}@${"b".repeat(50)}.${"c".repeat(50)}.${"d".repeat(50)}.${"e".repeat(50)}.com`,
     ];
 
     for (const customerEmail of invalidEmails) {
