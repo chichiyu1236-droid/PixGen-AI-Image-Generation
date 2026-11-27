@@ -9,7 +9,7 @@ import { buildImagePrompt } from "@/lib/prompts/builder";
 import { aspectRatios, imageTypes, scenes, styles, whitespaceOptions, type AspectRatioId } from "@/lib/prompts/options";
 import { GENERATED_IMAGES_BUCKET, ensureGeneratedImagesBucket, uploadGeneratedImage } from "@/lib/storage/images";
 import { generateRequestSchema } from "@/lib/validation/generate";
-import type { ToolDefinition, ToolResult } from "@/lib/agent/types";
+import type { CanvasItem, ToolDefinition, ToolResult } from "@/lib/agent/types";
 
 export type ToolContext = {
   userId: string;
@@ -333,16 +333,27 @@ async function runListCanvas(args: unknown, ctx: ToolContext): Promise<ToolResul
   return { ok: true, data: { items, costCredits: 0 } };
 }
 
-/** Canvas of a session, oldest first, with lineage-derived version labels. */
-export async function listCanvasItems(admin: SupabaseClient<Database>, sessionId: string) {
-  const { data: rows } = await admin
+export type CanvasItemsQueryResult =
+  | { data: CanvasItem[]; error: null }
+  | { data: null; error: unknown };
+
+/** Canvas of a session, oldest first, preserving Supabase query errors explicitly. */
+export async function listCanvasItemsWithError(
+  admin: SupabaseClient<Database>,
+  sessionId: string,
+): Promise<CanvasItemsQueryResult> {
+  const { data: rows, error } = await admin
     .from("generations")
     .select("id, image_url, origin, created_at, final_prompt, parent_generation_id")
     .eq("agent_session_id", sessionId)
     .order("created_at", { ascending: true });
 
-  if (!rows) {
-    return [];
+  if (error !== null) {
+    return { data: null, error: error ?? new Error("canvas_query_missing_error_status") };
+  }
+
+  if (!Array.isArray(rows)) {
+    return { data: null, error: new Error("canvas_query_missing_data") };
   }
 
   const byId = new Map(rows.map((row) => [row.id, row]));
@@ -364,19 +375,28 @@ export async function listCanvasItems(admin: SupabaseClient<Database>, sessionId
     return `图 ${(index ?? 0) + 1} · v${depthOf(id)}`;
   };
 
-  return rows.map((row) => {
-    const parent = row.parent_generation_id && byId.has(row.parent_generation_id) ? byId.get(row.parent_generation_id) : null;
+  return {
+    data: rows.map((row) => {
+      const parent = row.parent_generation_id && byId.has(row.parent_generation_id) ? byId.get(row.parent_generation_id) : null;
 
-    return {
-      generationId: row.id,
-      imageUrl: row.image_url ?? "",
-      origin: row.origin as "agent" | "agent_edit" | "agent_variant" | "classic",
-      version: labelOf(row.id),
-      basedOn: parent ? labelOf(parent.id) : null,
-      promptSummary: row.final_prompt.slice(0, 80),
-      createdAt: row.created_at,
-    };
-  });
+      return {
+        generationId: row.id,
+        imageUrl: row.image_url ?? "",
+        origin: row.origin as "agent" | "agent_edit" | "agent_variant" | "classic",
+        version: labelOf(row.id),
+        basedOn: parent ? labelOf(parent.id) : null,
+        promptSummary: row.final_prompt.slice(0, 80),
+        createdAt: row.created_at,
+      };
+    }),
+    error: null,
+  };
+}
+
+/** Canvas of a session, oldest first, with lineage-derived version labels. */
+export async function listCanvasItems(admin: SupabaseClient<Database>, sessionId: string): Promise<CanvasItem[]> {
+  const { data } = await listCanvasItemsWithError(admin, sessionId);
+  return data ?? [];
 }
 
 function rpcErrorKind(error: { message: string }): string {

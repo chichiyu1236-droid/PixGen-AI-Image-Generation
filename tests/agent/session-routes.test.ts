@@ -13,11 +13,15 @@ vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: vi.fn() })
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: vi.fn() }));
 vi.mock("@/lib/auth/ensure-profile", () => ({ ensureUserProfile: vi.fn() }));
 vi.mock("@/lib/agent/brain", () => ({ createBrain: vi.fn() }));
-vi.mock("@/lib/agent/tools", () => ({
-  runAgentTool: vi.fn(),
-  listCanvasItems: vi.fn(),
-  agentToolDefinitions: [],
-}));
+vi.mock("@/lib/agent/tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent/tools")>();
+  return {
+    ...actual,
+    runAgentTool: vi.fn(),
+    listCanvasItems: vi.fn(),
+    agentToolDefinitions: [],
+  };
+});
 
 const SESSION_ID = "33333333-3333-3333-3333-333333333333";
 const USER_ID = "44444444-4444-4444-4444-444444444444";
@@ -58,11 +62,26 @@ function serverClient(options: { user?: { id: string } | null; session?: object 
   };
 }
 
+type GenerationCanvasRow = {
+  id: string;
+  image_url: string | null;
+  origin: "agent" | "agent_edit" | "agent_variant" | "classic";
+  created_at: string;
+  final_prompt: string;
+  parent_generation_id: string | null;
+};
+
+type GenerationsQueryOutcome = { data: GenerationCanvasRow[] | null; error: unknown } | Error;
+
 function adminClient(options: {
   membershipActive?: boolean;
   onDeleteMessage?: (id: string) => void;
+  deleteMessageResult?: { error: unknown } | Error;
+  generationsQueries?: GenerationsQueryOutcome[];
   onInsertMessage?: (row: { id?: string; role: string; content?: string; trace?: unknown[] }) => void;
 } = {}) {
+  let generationsCallIndex = 0;
+
   return {
     rpc: vi.fn(async () => ({
       data: [
@@ -102,7 +121,10 @@ function adminClient(options: {
           delete: () => ({
             eq: async (_column: string, id: string) => {
               options.onDeleteMessage?.(id);
-              return { error: null };
+              if (options.deleteMessageResult instanceof Error) {
+                throw options.deleteMessageResult;
+              }
+              return options.deleteMessageResult ?? { error: null };
             },
           }),
           select: () => ({
@@ -128,6 +150,27 @@ function adminClient(options: {
             }),
           }),
           update: () => ({ eq: async () => ({ error: null }) }),
+        };
+      }
+
+      if (table === "generations") {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: async () => {
+                const outcomes = options.generationsQueries;
+                if (!outcomes || outcomes.length === 0) {
+                  return { data: [], error: null };
+                }
+                const outcome = outcomes[Math.min(generationsCallIndex, outcomes.length - 1)];
+                generationsCallIndex += 1;
+                if (outcome instanceof Error) {
+                  throw outcome;
+                }
+                return outcome;
+              },
+            }),
+          }),
         };
       }
 
@@ -237,19 +280,17 @@ describe("POST /api/agent/sessions/[id]/messages", () => {
         ok: true,
         data: { generationId: "55555555-5555-5555-5555-555555555555", imageUrl: "https://example.test/1.png", origin: "agent", costCredits: 1 },
       });
-    vi.mocked(listCanvasItems)
-      .mockResolvedValueOnce([])
-      .mockResolvedValue([
-        {
-          generationId: "55555555-5555-5555-5555-555555555555",
-          imageUrl: "https://example.test/1.png",
-          origin: "agent",
-          version: "图 1 · v1",
-          basedOn: null,
-          promptSummary: "专业提示词",
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+    vi.mocked(listCanvasItems).mockResolvedValue([
+      {
+        generationId: "55555555-5555-5555-5555-555555555555",
+        imageUrl: "https://example.test/1.png",
+        origin: "agent",
+        version: "图 1 · v1",
+        basedOn: null,
+        promptSummary: "专业提示词",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
 
     const response = await postMessage(request({ text: "做一张高端护肤品的电商海报，极简风格" }), {
       params: Promise.resolve({ id: SESSION_ID }),
@@ -373,13 +414,16 @@ describe("POST /api/agent/sessions/[id]/messages", () => {
     vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
     vi.mocked(createSupabaseAdminClient).mockReturnValue(
       adminClient({
+        generationsQueries: [
+          { data: [], error: null },
+          { data: [], error: null },
+        ],
         onInsertMessage: (row) => {
           if (row.role === "user" && row.id) insertedIds.push(row.id);
         },
         onDeleteMessage: (id) => deletedIds.push(id),
       }) as never,
     );
-    vi.mocked(listCanvasItems).mockResolvedValue([]);
     vi.mocked(createBrain).mockReturnValue({
       respond: vi.fn().mockRejectedValue(new Error("upstream_503")),
     });
@@ -400,22 +444,25 @@ describe("POST /api/agent/sessions/[id]/messages", () => {
     vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
     vi.mocked(createSupabaseAdminClient).mockReturnValue(
       adminClient({
+        generationsQueries: [
+          { data: [], error: null },
+          {
+            data: [
+              {
+                id: "66666666-6666-6666-6666-666666666666",
+                image_url: "https://example.test/generated.png",
+                origin: "agent",
+                created_at: new Date().toISOString(),
+                final_prompt: "海报",
+                parent_generation_id: null,
+              },
+            ],
+            error: null,
+          },
+        ],
         onDeleteMessage: (id) => deletedIds.push(id),
       }) as never,
     );
-    vi.mocked(listCanvasItems)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          generationId: "66666666-6666-6666-6666-666666666666",
-          imageUrl: "https://example.test/generated.png",
-          origin: "agent",
-          version: "图 1 · v1",
-          basedOn: null,
-          promptSummary: "海报",
-          createdAt: new Date().toISOString(),
-        },
-      ]);
     vi.mocked(createBrain).mockReturnValue({
       respond: vi.fn().mockRejectedValue(new Error("followup_turn_503")),
     });
@@ -428,5 +475,131 @@ describe("POST /api/agent/sessions/[id]/messages", () => {
     expect(response.status).toBe(502);
     expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: false });
     expect(deletedIds).toHaveLength(0);
+  });
+
+  it("preserves the inserted user message when post-failure canvas verification returns a Supabase error", async () => {
+    const deletedIds: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        generationsQueries: [
+          { data: [], error: null },
+          { data: null, error: { message: "connection_reset" } },
+        ],
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(createBrain).mockReturnValue({
+      respond: vi.fn().mockRejectedValue(new Error("followup_turn_503")),
+    });
+
+    try {
+      const response = await postMessage(request({ text: "做一张海报" }), {
+        params: Promise.resolve({ id: SESSION_ID }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: false });
+      expect(deletedIds).toHaveLength(0);
+      expect(errorSpy).toHaveBeenCalledWith({ message: "connection_reset" });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("preserves the inserted user message when post-failure canvas verification throws", async () => {
+    const deletedIds: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        generationsQueries: [{ data: [], error: null }, new Error("db_timeout")],
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(createBrain).mockReturnValue({
+      respond: vi.fn().mockRejectedValue(new Error("followup_turn_503")),
+    });
+
+    try {
+      const response = await postMessage(request({ text: "做一张海报" }), {
+        params: Promise.resolve({ id: SESSION_ID }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: false });
+      expect(deletedIds).toHaveLength(0);
+      expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ message: "db_timeout" }));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("preserves the inserted user message when pre-turn canvas lookup returns a Supabase error", async () => {
+    const deletedIds: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        generationsQueries: [
+          { data: null, error: { message: "pre_turn_db_error" } },
+          { data: [], error: null },
+        ],
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(createBrain).mockReturnValue({
+      respond: vi.fn().mockRejectedValue(new Error("upstream_503")),
+    });
+
+    try {
+      const response = await postMessage(request({ text: "做一张海报" }), {
+        params: Promise.resolve({ id: SESSION_ID }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: false });
+      expect(deletedIds).toHaveLength(0);
+      expect(errorSpy).toHaveBeenCalledWith({ message: "pre_turn_db_error" });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("returns userMessageRemoved: false when deleting the orphan user message fails with a Supabase error", async () => {
+    const deletedIds: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(serverClient({ session: { id: SESSION_ID } }) as never);
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      adminClient({
+        generationsQueries: [
+          { data: [], error: null },
+          { data: [], error: null },
+        ],
+        deleteMessageResult: { error: { message: "delete_failed" } },
+        onDeleteMessage: (id) => deletedIds.push(id),
+      }) as never,
+    );
+    vi.mocked(createBrain).mockReturnValue({
+      respond: vi.fn().mockRejectedValue(new Error("upstream_503")),
+    });
+
+    try {
+      const response = await postMessage(request({ text: "你好" }), {
+        params: Promise.resolve({ id: SESSION_ID }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({ error: "agent_turn_failed", userMessageRemoved: false });
+      expect(deletedIds).toHaveLength(1);
+      expect(errorSpy).toHaveBeenCalledWith({ message: "delete_failed" });
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

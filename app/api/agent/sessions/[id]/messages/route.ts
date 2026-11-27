@@ -4,12 +4,12 @@ import { z } from "zod";
 import { createBrain } from "@/lib/agent/brain";
 import { AGENT_MEMBERSHIP_REQUIRED, requireAgentMembership } from "@/lib/agent/membership-gate";
 import { runAgentTurn } from "@/lib/agent/loop";
-import { listCanvasItems, type ToolContext } from "@/lib/agent/tools";
+import { listCanvasItems, listCanvasItemsWithError, type ToolContext } from "@/lib/agent/tools";
 import { ensureUserProfile } from "@/lib/auth/ensure-profile";
 import { getCreditBalance } from "@/lib/auth/balance";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { BrainTurnMessage } from "@/lib/agent/types";
+import type { BrainTurnMessage, CanvasItem } from "@/lib/agent/types";
 
 export const maxDuration = 300;
 
@@ -28,8 +28,8 @@ async function removeOrphanUserMessage(
 ): Promise<boolean> {
   try {
     const result = await admin.from("agent_messages").delete().eq("id", userMessageId);
-    if (result?.error) {
-      console.error(result.error);
+    if (!result || result.error !== null) {
+      console.error(result?.error ?? new Error("delete_orphan_message_unknown_error"));
       return false;
     }
     return true;
@@ -43,11 +43,23 @@ async function cleanupUserMessageIfNoNewArtwork(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   sessionId: string,
   userMessageId: string,
-  canvasCountBefore: number,
+  beforeGenerationIds: ReadonlySet<string> | null,
 ): Promise<boolean> {
+  if (beforeGenerationIds === null) {
+    return false;
+  }
+
   try {
-    const afterCanvas = await listCanvasItems(admin, sessionId);
-    if (afterCanvas.length > canvasCountBefore) {
+    const afterCanvas = await listCanvasItemsWithError(admin, sessionId);
+    if (afterCanvas.error !== null || afterCanvas.data === null) {
+      console.error(afterCanvas.error ?? new Error("canvas_query_missing_data"));
+      return false;
+    }
+
+    const hasNewArtwork =
+      afterCanvas.data.length > beforeGenerationIds.size ||
+      afterCanvas.data.some((item) => !beforeGenerationIds.has(item.generationId));
+    if (hasNewArtwork) {
       return false;
     }
   } catch (canvasError) {
@@ -125,7 +137,20 @@ export async function POST(request: Request, context: MessagesRouteContext) {
     .reverse()
     .map((row) => ({ role: row.role === "user" ? "user" : "assistant", content: row.content }));
 
-  const canvas = await listCanvasItems(admin, id);
+  let canvas: CanvasItem[] = [];
+  let beforeGenerationIds: Set<string> | null = null;
+
+  try {
+    const beforeCanvas = await listCanvasItemsWithError(admin, id);
+    if (beforeCanvas.error !== null || beforeCanvas.data === null) {
+      console.error(beforeCanvas.error ?? new Error("canvas_query_missing_data"));
+    } else {
+      canvas = beforeCanvas.data;
+      beforeGenerationIds = new Set(beforeCanvas.data.map((item) => item.generationId));
+    }
+  } catch (canvasError) {
+    console.error(canvasError);
+  }
 
   let brain;
 
@@ -159,7 +184,7 @@ export async function POST(request: Request, context: MessagesRouteContext) {
     });
   } catch (error) {
     console.error(error);
-    const userMessageRemoved = await cleanupUserMessageIfNoNewArtwork(admin, id, userMessageId, canvas.length);
+    const userMessageRemoved = await cleanupUserMessageIfNoNewArtwork(admin, id, userMessageId, beforeGenerationIds);
     return NextResponse.json({ error: "agent_turn_failed", userMessageRemoved }, { status: 502 });
   }
 
@@ -176,7 +201,7 @@ export async function POST(request: Request, context: MessagesRouteContext) {
 
   if (insertAssistantError || !assistantMessage) {
     console.error(insertAssistantError);
-    const userMessageRemoved = await cleanupUserMessageIfNoNewArtwork(admin, id, userMessageId, canvas.length);
+    const userMessageRemoved = await cleanupUserMessageIfNoNewArtwork(admin, id, userMessageId, beforeGenerationIds);
     return NextResponse.json({ error: "message_store_failed", userMessageRemoved }, { status: 500 });
   }
 
